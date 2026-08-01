@@ -1,63 +1,18 @@
-"""Dataset ingestion pipeline."""
-
-from app.schemas.upload import UploadResponse
-from fastapi import UploadFile
-from supabase import Client
+from uuid import uuid4
 
 
-def upload_dataset(
-    db: Client,
-    workspace_id: str,
-    file: UploadFile,
-) -> UploadResponse:
-    """
-    Upload CSV to Supabase Storage and create dataset metadata.
-    """
-
-    if not file.filename:
-        raise ValueError("Filename is required")
-
-    filename = file.filename
-
-    storage_path = f"{workspace_id}/{filename}"
-
-    file_content = file.file.read()
-
-    db.storage.from_("datasets").upload(
-        path=storage_path,
-        file=file_content,
-        file_options={
-            "upsert": "true",
-            "content-type": "text/csv",
-        },
-    )
-
-    dataset_name = (
-        filename
-        .removesuffix(".csv")
-        .lower()
-        .replace("-", "_")
-        .replace(" ", "_")
-    )
-
-
-    db.table("datasets").insert(
-        {
-            "workspace_id": workspace_id,
-            "name": dataset_name,
-            "source_filename": filename,
-            "status": "ingesting",
-            "meta": {
-                "storage_path": storage_path,
-            },
-        }
-    ).execute()
-    
-
-    return UploadResponse(
-        workspace_id=workspace_id,
-        dataset_name=dataset_name,
-        rows=0,
-        columns=0,
-        warnings=[],
-    )
+def upload_files(db, workspace_id, files):
+    uploaded = []
+    for file in files:
+        if not file.filename or not file.filename.lower().endswith(".csv"):
+            raise ValueError("CSV files only")
+        dataset_id = str(uuid4())
+        name = file.filename.rsplit(".", 1)[0].lower().replace(" ", "_").replace("-", "_")
+        path = f"{workspace_id}/{dataset_id}.csv"
+        db.storage.from_("upload").upload(path, file.file, {"upsert": "false", "content-type": "text/csv"})
+        db.table("datasets").insert({
+            "id": dataset_id, "workspace_id": workspace_id, "name": name,
+            "source_filename": file.filename, "status": "uploaded", "meta": {"storage_path": path},
+        }).execute()
+        uploaded.append({"id": dataset_id, "name": name, "path": path})
+    return uploaded

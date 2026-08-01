@@ -1,39 +1,11 @@
-"""Upload API endpoints."""
+from fastapi import APIRouter, Depends, File, Request, UploadFile
 
-from fastapi import APIRouter, File, Request, UploadFile
+from app.deps import workspace
+from app.services.ingestion.pipeline import upload_files
 
-from server.app.services.ingestion.pipeline import upload_dataset
-from app.schemas.upload import UploadResponse
-
-
-router = APIRouter(
-    prefix="/upload",
-    tags=["upload"],
-)
+router = APIRouter(prefix="/upload", tags=["upload"])
 
 
-@router.post("")
-async def upload_files(
-    request: Request,
-    files: list[UploadFile] = File(...),
-) -> list[UploadResponse]:
-    """
-    Upload one or more CSV files.
-    """
-
-    db = request.app.state.db
-
-    workspace_id = "ws_test1234"  # temporary until auth/workspace handling
-
-    responses = []
-
-    for file in files:
-        response = upload_dataset(
-            db=db,
-            workspace_id=workspace_id,
-            file=file,
-        )
-
-        responses.append(response)
-
-    return responses
+@router.post("", status_code=201)
+def upload(request: Request, files: list[UploadFile] = File(...), workspace_id: str = Depends(workspace)):
+    return upload_files(request.app.state.db, workspace_id, files)

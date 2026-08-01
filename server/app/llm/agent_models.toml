@@ -1,0 +1,23 @@
+[ollama]
+base_url = "http://localhost:11434"
+timeout_seconds = 120
+
+[agents.supervisor]
+model = "llama3.2"
+temperature = 0.1
+num_ctx = 8192
+
+[agents.dashboard]
+model = "llama3.2"
+temperature = 0.2
+num_ctx = 8192
+
+[agents.insights]
+model = "llama3.2"
+temperature = 0.2
+num_ctx = 8192
+
+[agents.chat]
+model = "llama3.2"
+temperature = 0.2
+num_ctx = 8192

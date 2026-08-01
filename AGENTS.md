@@ -2,42 +2,66 @@
 
 ## Project context
 
-This repository contains the backend for an AI data analytics platform. Users upload CSV data, ask questions in natural language, and generate analytics dashboards.
+This repository contains the backend for an AI data analytics platform. Users upload tabular files, receive a generated analytics dashboard, and then ask questions about their data and dashboard findings.
 
-`DESIGN.md` is the main source of project context. Read the relevant sections before making a non-trivial change. The design is still evolving, so do not treat implementation details, libraries, schemas, or directory examples as permanently fixed unless the current code depends on them.
+Before proposing or making changes, read the applicable `AGENTS.md`, inspect the relevant code, and read `LANGGRAPH_ARCHITECTURE.md`. Treat `LANGGRAPH_ARCHITECTURE.md` as the main source of architecture context.
 
-## Confirmed delivery structure
+## Confirmed architecture
 
-The system has three confirmed pipelines, implemented in this order:
+The runtime order is:
 
 1. Upload
-2. Chat
-3. Dashboard
+2. Dashboard
+3. Chat
 
-Build the final intended version one pipeline at a time. Do not introduce a separate throwaway MVP, temporary architecture, or duplicate flow unless explicitly requested. Later pipelines should reuse completed shared components.
+- Implement upload as deterministic application and service code.
+- Implement dashboard generation as a LangGraph workflow with `DashboardState`.
+- Implement chat as a separate LangGraph workflow with `ChatState`.
+- Persist datasets, dashboard results, evidence, statuses, and chat messages in the database.
+- Enable chat only after the dashboard is ready.
+- Let chat read persisted dashboard evidence and query the dataset when required.
+- Keep LangGraph state scoped to one graph run. Do not use it as permanent storage.
 
 ## Working rules
 
-- Inspect the existing code and `DESIGN.md` before proposing or making changes.
-- Work only on the requested pipeline and avoid unrelated refactors.
-- Keep endpoint handlers thin; business logic belongs in services or domain modules.
-- Prefer simple, typed, testable code over unnecessary abstractions.
-- Keep configuration outside business logic and never hard-code secrets.
+- Work only on the requested feature and avoid unrelated refactors.
+- Keep everything simple and use the fewest practical lines of clear code.
+- Use classes for services and group related service functions in the same class.
+- Do not create custom error classes; use standard exceptions.
+- Add only basic error handling unless security or data integrity requires more.
+- Do not add unnecessary abstractions, wrappers, dependencies, configuration, or comments.
+- Keep endpoint handlers thin and place business logic in services or domain modules.
+- Reuse existing code, models, dependencies, naming, and project structure.
+- Keep configuration outside business logic and never hard-code secrets or environment-specific values.
+- Keep new and modified code typed.
 - Validate external input and structured model output at system boundaries.
-- Preserve authentication, ownership checks, and data isolation.
-- Keep numerical analytics deterministic; language models must not invent or calculate user-facing figures.
-- Return explicit failures or unavailable states instead of fabricated results.
-- Add or update focused tests for changed behaviour.
-- Do not silently change a confirmed contract. Explain conflicts and ask before making a significant design decision.
+- Preserve authentication, ownership checks, RLS, and user data isolation.
+- Keep numerical calculations deterministic. LLMs may select or interpret analysis but must not invent figures.
+- Return explicit failure or unavailable states instead of fabricated results.
+- Do not add enhancements, retries, fallbacks, optimisations, or extra features unless requested.
+- Do not leave placeholders, mock results, or hard-coded application data.
+- Do not silently change an existing contract or architecture decision. Ask before making a significant design change.
 
-## Keeping documentation current
+## Database changes
 
-Implementation details may change. When code and `DESIGN.md` disagree, identify the mismatch and update the documentation alongside the code when the change is intentional. Keep this file short and stable; detailed architecture belongs in `DESIGN.md`.
+- Reuse the current schema where possible.
+- If a database setup or schema script changes, provide the drop-all-application-tables script first, followed by the complete updated setup or schema script.
+- Do not drop or modify authentication-managed tables.
+- Preserve ownership constraints and RLS policies.
+
+## Documentation
+
+- Keep detailed architecture in `LANGGRAPH_ARCHITECTURE.md` rather than duplicating it here.
+- When the implementation and architecture document disagree, identify the mismatch.
+- Update `LANGGRAPH_ARCHITECTURE.md` alongside the code only when the architecture change is intentional and approved.
 
 ## Verification
 
 Before finishing a change:
 
-- Run the narrowest relevant tests and checks available.
-- Report what changed, what was verified, and any unresolved assumptions.
-- Do not claim a command or test passed unless it was actually run.
+- Add or update focused tests for the changed behaviour.
+- Run the narrowest relevant tests and configured lint or formatting checks.
+- Run the relevant type checker.
+- Fix all type errors caused or exposed by the changes.
+- Do not claim a check passed unless it was actually run.
+- Report what changed, what was verified, and any unresolved assumption or blocker.

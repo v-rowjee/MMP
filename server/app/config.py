@@ -9,6 +9,8 @@ class Settings(BaseSettings):
 
     supabase_url: str
     supabase_secret_key: SecretStr
+    upload_bucket: str = "upload"
+    upload_max_file_bytes: int = 52_428_800
 
     model_config = SettingsConfigDict(
         env_file=".env",

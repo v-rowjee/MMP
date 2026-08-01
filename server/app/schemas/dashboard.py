@@ -44,6 +44,16 @@ class DataSummary(BaseModel):
     summary_text: str | None = None
 
 
+class DashboardAnalysisPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    focus_areas: list[str] = Field(min_length=1, max_length=5)
+    kpi_fields: list[str] = Field(default_factory=list)
+    trend_fields: list[str] = Field(default_factory=list)
+    anomaly_fields: list[str] = Field(default_factory=list)
+    forecast_fields: list[str] = Field(default_factory=list)
+
+
 # -------------------------
 # KPI cards
 # -------------------------
@@ -68,6 +78,28 @@ class KPI(BaseModel):
     ] = "unknown"
 
     sql: str
+
+
+class Trend(BaseModel):
+    """A verified change in a planned dataset field."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    field: str
+    direction: Literal["up", "down", "stable", "unknown"]
+    summary: str
+    period: str | None = None
+    change_pct: float | None = None
+    sql: str
+
+
+class KPIAndTrendAnalysis(BaseModel):
+    """Structured LLM output for the KPI and trend workflow node."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kpis: list[KPI] = Field(default_factory=list)
+    trends: list[Trend] = Field(default_factory=list)
 
 
 # -------------------------
@@ -116,6 +148,14 @@ class ChartConfig(BaseModel):
     sql: str
 
 
+class DashboardLayout(BaseModel):
+    """Structured LLM output for the dashboard construction workflow node."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    charts: list[ChartConfig] = Field(default_factory=list)
+
+
 # -------------------------
 # Anomalies
 # -------------------------
@@ -137,6 +177,14 @@ class Anomaly(BaseModel):
     score: float
 
     reason: str
+
+
+class AnomalyAnalysis(BaseModel):
+    """Structured LLM output for the anomaly detection workflow node."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    anomalies: list[Anomaly] = Field(default_factory=list)
 
 
 class AnomalySection(BaseModel):
@@ -190,6 +238,14 @@ class ForecastSection(BaseModel):
     reason: str | None = None
 
 
+class ForecastAnalysis(BaseModel):
+    """Structured LLM output for the forecasting workflow node."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    forecasts: list[ForecastSection] = Field(default_factory=list)
+
+
 # -------------------------
 # Insights
 # -------------------------
@@ -235,6 +291,15 @@ class Recommendation(BaseModel):
     reason: str
 
     evidence: list[str]
+
+
+class InsightSynthesis(BaseModel):
+    """Structured LLM output for the insight synthesis workflow node."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    insights: list[Insight] = Field(default_factory=list)
+    recommendations: list[Recommendation] = Field(default_factory=list)
 
 
 # -------------------------

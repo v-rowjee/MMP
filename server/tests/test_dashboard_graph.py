@@ -65,24 +65,24 @@ class Database:
 class Planner:
     def chat(self, _, messages, **_kwargs):
         prompt = messages[0]["content"]
-        if "Create a concise dashboard analysis plan" in prompt:
+        if "task: plan_analysis" in prompt:
             return (
                 '{"focus_areas":["Sales performance"],"kpi_fields":["amount"],'
                 '"trend_fields":["amount"],"anomaly_fields":["amount"],"forecast_fields":["amount"]}'
             )
-        if "Detect anomalies" in prompt:
+        if "task: detect_anomalies" in prompt:
             return (
                 '{"anomalies":[{"dataset":"sales","column":"amount","timestamp":null,'
                 '"value":99.0,"expected":15.0,"score":2.5,"reason":"Outside expected range"}]}'
             )
-        if "Generate forecasts" in prompt:
+        if "task: generate_forecasts" in prompt:
             return (
                 '{"forecasts":[{"available":true,"model":"linear","target":"amount",'
                 '"granularity":"monthly","horizon":2,"backtest_mape":12.5,'
                 '"points":[{"timestamp":"2026-01-01","actual":null,"prediction":35.0,'
                 '"lower_bound":30.0,"upper_bound":40.0}],"reason":null}]}'
             )
-        if "Synthesise concise insights" in prompt:
+        if "task: synthesise_insights" in prompt:
             return (
                 '{"insights":[{"type":"summary","title":"Amount is rising",'
                 '"text":"Amount increased.","evidence":["kpis[0]","trends[0]"]}],'
@@ -90,7 +90,7 @@ class Planner:
                 '"priority":"medium","reason":"An unusual amount was detected.",'
                 '"evidence":["anomalies[0]"]}]}'
             )
-        if "Build a concise dashboard layout" in prompt:
+        if "task: build_dashboard_layout" in prompt:
             return (
                 '{"charts":[{"id":"amount_over_time","title":"Amount over time",'
                 '"type":"line","dataset":"sales","x_axis":"order_id",'

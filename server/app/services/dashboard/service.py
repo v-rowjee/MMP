@@ -3,9 +3,10 @@
 import json
 from typing import Any
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from app.llm.client import OllamaClient
+from app.llm.prompt_loader import PromptLoader
 from app.schemas.dashboard import (
     AnomalyAnalysis,
     DashboardAnalysisPlan,
@@ -17,9 +18,37 @@ from app.schemas.dashboard import (
 
 
 class DashboardService:
-    def __init__(self, db: Any, llm: Any | None = None):
+    def __init__(
+        self,
+        db: Any,
+        llm: Any | None = None,
+        prompts: PromptLoader | None = None,
+    ):
         self.db = db
         self.llm = llm or OllamaClient()
+        self.prompts = prompts or PromptLoader()
+
+    def _request_structured_output(
+        self,
+        agent: str,
+        prompt_name: str,
+        context: dict[str, Any],
+        response_model: type[BaseModel],
+        error_message: str,
+    ) -> dict[str, Any]:
+        try:
+            instruction = self.prompts.load(prompt_name)
+            response = self.llm.chat(
+                agent,
+                [
+                    {"role": "system", "content": instruction},
+                    {"role": "user", "content": json.dumps(context)},
+                ],
+                response_format=response_model.model_json_schema(),
+            )
+            return response_model.model_validate_json(response).model_dump()
+        except (RuntimeError, ValidationError, ValueError) as error:
+            raise ValueError(error_message) from error
 
     def load_dataset_context(self, analysis_id: str, dataset_id: str) -> dict[str, Any]:
         analysis = (
@@ -64,25 +93,13 @@ class DashboardService:
         }
 
     def plan_dashboard_analysis(self, schema: dict[str, Any]) -> dict[str, Any]:
-        try:
-            response = self.llm.chat(
-                "dashboard",
-                [
-                    {
-                        "role": "system",
-                        "content": (
-                            "Create a concise dashboard analysis plan. Use only the supplied field names. "
-                            "Choose useful KPI, trend, anomaly, and forecast candidates where appropriate. "
-                            "Do not calculate values or make claims about the data."
-                        ),
-                    },
-                    {"role": "user", "content": json.dumps(schema)},
-                ],
-                response_format=DashboardAnalysisPlan.model_json_schema(),
-            )
-            plan = DashboardAnalysisPlan.model_validate_json(response).model_dump()
-        except (RuntimeError, ValidationError, ValueError) as error:
-            raise ValueError("Invalid dashboard analysis plan") from error
+        plan = self._request_structured_output(
+            "dashboard",
+            "dashboard_planner",
+            schema,
+            DashboardAnalysisPlan,
+            "Invalid dashboard analysis plan",
+        )
 
         fields = {field["name"] for field in schema.get("fields", [])}
         selected_fields = (
@@ -100,31 +117,13 @@ class DashboardService:
         schema: dict[str, Any],
         analysis_plan: dict[str, Any],
     ) -> dict[str, list[dict[str, Any]]]:
-        try:
-            response = self.llm.chat(
-                "dashboard",
-                [
-                    {
-                        "role": "system",
-                        "content": (
-                            "Generate KPI and trend results for the supplied dashboard analysis plan. "
-                            "Use only the supplied field names and profile evidence. "
-                            "Do not invent values: omit a result when the supplied evidence cannot support it. "
-                            "Each result must include the deterministic SQL needed to verify it."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": json.dumps(
-                            {"schema": schema, "analysis_plan": analysis_plan}
-                        ),
-                    },
-                ],
-                response_format=KPIAndTrendAnalysis.model_json_schema(),
-            )
-            results = KPIAndTrendAnalysis.model_validate_json(response).model_dump()
-        except (RuntimeError, ValidationError, ValueError) as error:
-            raise ValueError("Invalid KPI and trend analysis") from error
+        results = self._request_structured_output(
+            "dashboard",
+            "kpis_and_trends",
+            {"schema": schema, "analysis_plan": analysis_plan},
+            KPIAndTrendAnalysis,
+            "Invalid KPI and trend analysis",
+        )
 
         fields = {field["name"] for field in schema.get("fields", [])}
         trend_fields = set(analysis_plan.get("trend_fields", []))
@@ -137,31 +136,13 @@ class DashboardService:
         schema: dict[str, Any],
         analysis_plan: dict[str, Any],
     ) -> dict[str, list[dict[str, Any]]]:
-        try:
-            response = self.llm.chat(
-                "dashboard",
-                [
-                    {
-                        "role": "system",
-                        "content": (
-                            "Detect anomalies for the supplied dashboard analysis plan. "
-                            "Use only the supplied dataset context, field names, and profile evidence. "
-                            "Do not invent observations or values: omit an anomaly when the supplied evidence "
-                            "cannot support it."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": json.dumps(
-                            {"schema": schema, "analysis_plan": analysis_plan}
-                        ),
-                    },
-                ],
-                response_format=AnomalyAnalysis.model_json_schema(),
-            )
-            results = AnomalyAnalysis.model_validate_json(response).model_dump()
-        except (RuntimeError, ValidationError, ValueError) as error:
-            raise ValueError("Invalid anomaly analysis") from error
+        results = self._request_structured_output(
+            "dashboard",
+            "anomalies",
+            {"schema": schema, "analysis_plan": analysis_plan},
+            AnomalyAnalysis,
+            "Invalid anomaly analysis",
+        )
 
         fields = {field["name"] for field in schema.get("fields", [])}
         anomaly_fields = set(analysis_plan.get("anomaly_fields", []))
@@ -180,31 +161,13 @@ class DashboardService:
         schema: dict[str, Any],
         analysis_plan: dict[str, Any],
     ) -> dict[str, list[dict[str, Any]]]:
-        try:
-            response = self.llm.chat(
-                "dashboard",
-                [
-                    {
-                        "role": "system",
-                        "content": (
-                            "Generate forecasts for the supplied dashboard analysis plan. "
-                            "Use only the supplied dataset context, field names, and profile evidence. "
-                            "Do not invent forecast values or confidence bounds: return an unavailable forecast "
-                            "with a reason when the supplied evidence cannot support it."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": json.dumps(
-                            {"schema": schema, "analysis_plan": analysis_plan}
-                        ),
-                    },
-                ],
-                response_format=ForecastAnalysis.model_json_schema(),
-            )
-            results = ForecastAnalysis.model_validate_json(response).model_dump()
-        except (RuntimeError, ValidationError, ValueError) as error:
-            raise ValueError("Invalid forecast analysis") from error
+        results = self._request_structured_output(
+            "dashboard",
+            "forecasts",
+            {"schema": schema, "analysis_plan": analysis_plan},
+            ForecastAnalysis,
+            "Invalid forecast analysis",
+        )
 
         fields = {field["name"] for field in schema.get("fields", [])}
         forecast_fields = set(analysis_plan.get("forecast_fields", []))
@@ -232,25 +195,13 @@ class DashboardService:
             "anomalies": self._with_evidence_ids("anomalies", anomalies),
             "forecasts": self._with_evidence_ids("forecasts", forecasts),
         }
-        try:
-            response = self.llm.chat(
-                "insights",
-                [
-                    {
-                        "role": "system",
-                        "content": (
-                            "Synthesise concise insights and recommendations from the supplied analytical "
-                            "evidence. Do not introduce figures or claims absent from that evidence. Each "
-                            "insight and recommendation must cite one or more supplied evidence IDs."
-                        ),
-                    },
-                    {"role": "user", "content": json.dumps(context)},
-                ],
-                response_format=InsightSynthesis.model_json_schema(),
-            )
-            results = InsightSynthesis.model_validate_json(response).model_dump()
-        except (RuntimeError, ValidationError, ValueError) as error:
-            raise ValueError("Invalid insight synthesis") from error
+        results = self._request_structured_output(
+            "insights",
+            "insights",
+            context,
+            InsightSynthesis,
+            "Invalid insight synthesis",
+        )
 
         evidence_ids = {
             item["id"]
@@ -294,25 +245,13 @@ class DashboardService:
             "insights": insights,
             "recommendations": recommendations,
         }
-        try:
-            response = self.llm.chat(
-                "dashboard",
-                [
-                    {
-                        "role": "system",
-                        "content": (
-                            "Build a concise dashboard layout from the supplied validated analysis. "
-                            "Return useful chart configurations only. Use only supplied dataset and field names; "
-                            "do not add analytical values or claims."
-                        ),
-                    },
-                    {"role": "user", "content": json.dumps(context)},
-                ],
-                response_format=DashboardLayout.model_json_schema(),
-            )
-            dashboard = DashboardLayout.model_validate_json(response).model_dump()
-        except (RuntimeError, ValidationError, ValueError) as error:
-            raise ValueError("Invalid dashboard layout") from error
+        dashboard = self._request_structured_output(
+            "dashboard",
+            "dashboard_builder",
+            context,
+            DashboardLayout,
+            "Invalid dashboard layout",
+        )
 
         fields = {field["name"] for field in schema.get("fields", [])}
         dataset_name = schema.get("dataset", {}).get("name")

@@ -26,7 +26,7 @@ def test_chat_uses_the_configured_agent_model_and_options(monkeypatch):
         captured["url"] = request.full_url
         captured["timeout"] = timeout
         captured["payload"] = json.loads(request.data)
-        return Response(b'{"model":"llama3.2","message":{"content":"Hello"}}')
+        return Response(b'{"model":"nemotron-3-super:cloud","message":{"content":"Hello"}}')
 
     monkeypatch.setattr("app.llm.client.urlopen", fake_urlopen)
     client = OllamaClient()
@@ -37,10 +37,19 @@ def test_chat_uses_the_configured_agent_model_and_options(monkeypatch):
     assert captured["url"] == "http://localhost:11434/api/chat"
     assert captured["timeout"] == 120
     assert captured["payload"] == {
-        "model": "llama3.2",
+        "model": "nemotron-3-super:cloud",
         "messages": [{"role": "user", "content": "Hi"}],
         "stream": False,
-        "options": {"temperature": 0.2, "num_ctx": 8192},
+        "options": {"temperature": 0.2, "num_ctx": 32768},
+    }
+
+
+def test_loads_all_agent_configurations_from_one_file():
+    client = OllamaClient()
+
+    assert set(client.agents) == {"chat", "dashboard", "insights", "supervisor"}
+    assert {config["model"] for config in client.agents.values()} == {
+        "nemotron-3-super:cloud"
     }
 
 

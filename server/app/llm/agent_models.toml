@@ -3,21 +3,21 @@ base_url = "http://localhost:11434"
 timeout_seconds = 120
 
 [agents.supervisor]
-model = "llama3.2"
+model = "nemotron-3-super:cloud"
 temperature = 0.1
-num_ctx = 8192
+num_ctx = 32768
 
 [agents.dashboard]
-model = "llama3.2"
-temperature = 0.2
-num_ctx = 8192
+model = "nemotron-3-super:cloud"
+temperature = 0.1
+num_ctx = 32768
 
 [agents.insights]
-model = "llama3.2"
+model = "nemotron-3-super:cloud"
 temperature = 0.2
-num_ctx = 8192
+num_ctx = 32768
 
 [agents.chat]
-model = "llama3.2"
+model = "nemotron-3-super:cloud"
 temperature = 0.2
-num_ctx = 8192
+num_ctx = 32768

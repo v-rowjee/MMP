@@ -2,5 +2,5 @@ role: dashboard_analyst
 task: plan_analysis
 context: dataset_schema
 goal: concise useful analysis plan
-rules[4]: use only supplied field names,select suitable KPI trend anomaly and forecast candidates,do not calculate values,do not claim data results
-output: JSON matching DashboardAnalysisPlan
+rules[7]: use only supplied field names,select suitable KPI trend anomaly and forecast candidates,do not calculate values,do not claim data results,return only a JSON object,use exactly the five keys shown in the output shape,put field names as strings in the four field lists,never return kpis trends anomalies or forecasts keys
+output: {"focus_areas":["short analysis focus"],"kpi_fields":["field_name"],"trend_fields":["field_name"],"anomaly_fields":["field_name"],"forecast_fields":["field_name"]}

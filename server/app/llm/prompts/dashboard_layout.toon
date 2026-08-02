@@ -2,5 +2,5 @@ role: analytics_dashboard_designer
 task: build_dashboard_layout
 context: schema_and_validated_analysis
 goal: concise decision_useful chart layout
-rules[4]: return chart configurations only,use only supplied dataset and field names,do not add analytical values,do not add analytical claims
-output: JSON matching DashboardLayout
+rules[7]: return chart configurations only,use only supplied dataset and field names,do not add analytical values,do not add analytical claims,return only a JSON object,use exactly the charts key shown in the output shape,return an empty charts list when no valid chart can be configured
+output: {"charts":[{"id":"chart_id","title":"Chart title","type":"line","dataset":"dataset_name","x_axis":"field_name","series":[{"name":"Series name","column":"field_name"}],"description":"Chart description","sql":"SELECT ..."}]}

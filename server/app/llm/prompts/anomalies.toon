@@ -2,5 +2,5 @@ role: anomaly_analyst
 task: detect_anomalies
 context: schema_and_analysis_plan
 evidence: supplied_dataset_context_and_profiles_only
-rules[4]: use only planned anomaly fields,omit unsupported anomalies,never invent observations,never invent values
-output: JSON matching AnomalyAnalysis
+rules[7]: use only planned anomaly fields,omit unsupported anomalies,never invent observations,never invent values,return only a JSON object,use exactly the anomalies key shown in the output shape,return an empty anomalies list when evidence is insufficient
+output: {"anomalies":[{"dataset":"dataset_name","column":"field_name","timestamp":null,"value":0.0,"expected":null,"score":0.0,"reason":"supported reason"}]}

@@ -9,13 +9,19 @@ def detect_anomalies(
     llm: Any,
     schema: dict[str, Any],
     analysis_plan: dict[str, Any],
-) -> dict[str, list[dict[str, Any]]]:
-    results = llm.generate(
-        "dashboard",
-        "anomalies",
-        {"schema": schema, "analysis_plan": analysis_plan},
-        AnomalyAnalysis,
-    ).model_dump()
+) -> dict[str, Any]:
+    try:
+        results = llm.generate(
+            "anomaly",
+            "anomalies",
+            {"schema": schema, "analysis_plan": analysis_plan},
+            AnomalyAnalysis,
+        ).model_dump()
+    except RuntimeError:
+        return {
+            "anomalies": [],
+            "errors": ["Anomaly worker output was unavailable."],
+        }
     fields = {field["name"] for field in schema.get("fields", [])}
     anomaly_fields = set(analysis_plan.get("anomaly_fields", []))
     dataset_name = schema.get("dataset", {}).get("name")
@@ -25,5 +31,8 @@ def detect_anomalies(
         or dataset_name and anomaly["dataset"] != dataset_name
         for anomaly in results["anomalies"]
     ):
-        raise ValueError("Anomaly analysis contains unplanned or unknown fields")
+        return {
+            "anomalies": [],
+            "errors": ["Anomaly worker output contained invalid fields."],
+        }
     return results

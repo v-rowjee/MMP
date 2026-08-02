@@ -10,7 +10,7 @@ class DashboardRepository:
     def load_dataset_context(self, analysis_id: str, dataset_id: str) -> dict[str, Any]:
         analysis = (
             self.db.table("analysis_runs")
-            .select("dataset_id")
+            .select("dataset_id, workspace_id")
             .eq("id", analysis_id)
             .maybe_single()
             .execute()
@@ -21,7 +21,9 @@ class DashboardRepository:
 
         dataset = (
             self.db.table("datasets")
-            .select("id, name, source_filename, row_count, meta, uploaded_at")
+            .select(
+                "id, workspace_id, name, source_filename, row_count, meta, uploaded_at"
+            )
             .eq("id", dataset_id)
             .maybe_single()
             .execute()
@@ -29,6 +31,8 @@ class DashboardRepository:
         )
         if not dataset:
             raise ValueError("Dataset not found")
+        if dataset["workspace_id"] != analysis["workspace_id"]:
+            raise ValueError("Analysis run and dataset belong to different workspaces")
 
         fields = (
             self.db.table("dataset_fields")

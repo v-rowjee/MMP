@@ -44,10 +44,17 @@ class Query:
 class Database:
     def __init__(self):
         self.rows = {
-            "analysis_runs": [{"id": "analysis_123", "dataset_id": "dataset_123"}],
+            "analysis_runs": [
+                {
+                    "id": "analysis_123",
+                    "dataset_id": "dataset_123",
+                    "workspace_id": "workspace_123",
+                }
+            ],
             "datasets": [
                 {
                     "id": "dataset_123",
+                    "workspace_id": "workspace_123",
                     "name": "sales",
                     "source_filename": "sales.csv",
                     "row_count": 2,
@@ -114,6 +121,26 @@ class Planner(TestLLM):
         )
 
 
+class RecordingPlanner(Planner):
+    def __init__(self):
+        self.agents = {}
+
+    def generate(self, agent, prompt_name, context, response_model):
+        self.agents[prompt_name] = agent
+        return super().generate(agent, prompt_name, context, response_model)
+
+
+class UnavailableWorkersPlanner(Planner):
+    def generate(self, agent, prompt_name, context, response_model):
+        if prompt_name in {"kpis_and_trends", "anomalies", "forecasts"}:
+            raise RuntimeError("worker unavailable")
+        if prompt_name == "insights":
+            return response_model.model_validate(
+                {"insights": [], "recommendations": []}
+            )
+        return super().generate(agent, prompt_name, context, response_model)
+
+
 class UnknownFieldPlanner(TestLLM):
     def response(self, *_args):
         return (
@@ -162,10 +189,62 @@ def test_dashboard_graph_runs_full_skeleton_flow():
     assert db.rows["analysis_runs"][0]["dashboard"] == result["dashboard"]
 
 
+def test_dashboard_graph_uses_dedicated_agent_configurations():
+    llm = RecordingPlanner()
+
+    build_dashboard_graph(Database(), llm).invoke(
+        {"analysis_id": "analysis_123", "dataset_id": "dataset_123"}
+    )
+
+    assert llm.agents == {
+        "dashboard_planner": "supervisor",
+        "kpis_and_trends": "kpi",
+        "anomalies": "anomaly",
+        "forecasts": "forecast",
+        "insights": "insights",
+        "dashboard_layout": "layout",
+    }
+
+
+def test_dashboard_graph_persists_worker_unavailable_warnings():
+    result = build_dashboard_graph(Database(), UnavailableWorkersPlanner()).invoke(
+        {"analysis_id": "analysis_123", "dataset_id": "dataset_123"}
+    )
+
+    assert result["kpis"] == []
+    assert result["anomalies"] == []
+    assert result["forecasts"][0]["available"] is False
+    assert set(result["errors"]) == {
+        "KPI worker output was unavailable.",
+        "Anomaly worker output was unavailable.",
+        "Forecast worker output was unavailable.",
+    }
+
+
 def test_load_dataset_context_rejects_mismatched_analysis_run():
     with pytest.raises(ValueError, match="does not match"):
         DashboardWorkflow(Database()).load_dataset_context(
             {"analysis_id": "analysis_123", "dataset_id": "dataset_456"}
+        )
+
+
+def test_load_dataset_context_returns_the_linked_dataset_and_fields():
+    context = DashboardRepository(Database()).load_dataset_context(
+        "analysis_123", "dataset_123"
+    )
+
+    assert context["dataset"]["id"] == "dataset_123"
+    assert context["dataset"]["name"] == "sales"
+    assert [field["name"] for field in context["fields"]] == ["order_id", "amount"]
+
+
+def test_load_dataset_context_rejects_cross_workspace_dataset():
+    db = Database()
+    db.rows["datasets"][0]["workspace_id"] = "workspace_456"
+
+    with pytest.raises(ValueError, match="different workspaces"):
+        DashboardRepository(db).load_dataset_context(
+            "analysis_123", "dataset_123"
         )
 
 
@@ -190,13 +269,18 @@ class InvalidTrendPlanner(TestLLM):
         return "not json"
 
 
-def test_kpi_and_trend_analysis_rejects_invalid_model_response():
-    with pytest.raises(RuntimeError, match="Invalid JSON"):
-        dashboard_agents.calculate_kpis_and_trends(
-            InvalidTrendPlanner(),
-            {"fields": [{"name": "amount"}]},
-            {"kpi_fields": ["amount"], "trend_fields": ["amount"]},
-        )
+def test_kpi_and_trend_worker_omits_invalid_model_response():
+    result = dashboard_agents.calculate_kpis_and_trends(
+        InvalidTrendPlanner(),
+        {"fields": [{"name": "amount"}]},
+        {"kpi_fields": ["amount"], "trend_fields": ["amount"]},
+    )
+
+    assert result == {
+        "kpis": [],
+        "trends": [],
+        "errors": ["KPI worker output was unavailable."],
+    }
 
 
 class InvalidAnomalyPlanner(TestLLM):
@@ -204,13 +288,17 @@ class InvalidAnomalyPlanner(TestLLM):
         return "not json"
 
 
-def test_anomaly_analysis_rejects_invalid_model_response():
-    with pytest.raises(RuntimeError, match="Invalid JSON"):
-        dashboard_agents.detect_anomalies(
-            InvalidAnomalyPlanner(),
-            {"fields": [{"name": "amount"}]},
-            {"anomaly_fields": ["amount"]},
-        )
+def test_anomaly_worker_omits_invalid_model_response():
+    result = dashboard_agents.detect_anomalies(
+        InvalidAnomalyPlanner(),
+        {"fields": [{"name": "amount"}]},
+        {"anomaly_fields": ["amount"]},
+    )
+
+    assert result == {
+        "anomalies": [],
+        "errors": ["Anomaly worker output was unavailable."],
+    }
 
 
 class InvalidForecastPlanner(TestLLM):
@@ -218,13 +306,15 @@ class InvalidForecastPlanner(TestLLM):
         return "not json"
 
 
-def test_forecast_analysis_rejects_invalid_model_response():
-    with pytest.raises(RuntimeError, match="Invalid JSON"):
-        dashboard_agents.generate_forecasts(
-            InvalidForecastPlanner(),
-            {"fields": [{"name": "amount"}]},
-            {"forecast_fields": ["amount"]},
-        )
+def test_forecast_worker_returns_unavailable_for_invalid_model_response():
+    result = dashboard_agents.generate_forecasts(
+        InvalidForecastPlanner(),
+        {"fields": [{"name": "amount"}]},
+        {"forecast_fields": ["amount"]},
+    )
+
+    assert result["forecasts"][0]["available"] is False
+    assert result["errors"] == ["Forecast worker output was unavailable."]
 
 
 class InvalidInsightPlanner(TestLLM):

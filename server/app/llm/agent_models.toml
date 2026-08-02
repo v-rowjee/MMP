@@ -7,7 +7,17 @@ model = "nemotron-3-super:cloud"
 temperature = 0.1
 num_ctx = 32768
 
-[agents.dashboard]
+[agents.kpi]
+model = "nemotron-3-super:cloud"
+temperature = 0.1
+num_ctx = 32768
+
+[agents.anomaly]
+model = "nemotron-3-super:cloud"
+temperature = 0.1
+num_ctx = 32768
+
+[agents.forecast]
 model = "nemotron-3-super:cloud"
 temperature = 0.1
 num_ctx = 32768
@@ -15,6 +25,11 @@ num_ctx = 32768
 [agents.insights]
 model = "nemotron-3-super:cloud"
 temperature = 0.2
+num_ctx = 32768
+
+[agents.layout]
+model = "nemotron-3-super:cloud"
+temperature = 0.1
 num_ctx = 32768
 
 [agents.chat]

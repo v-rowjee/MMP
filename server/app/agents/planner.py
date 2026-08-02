@@ -10,7 +10,7 @@ def plan_dashboard_analysis(
     schema: dict[str, Any],
 ) -> dict[str, Any]:
     plan = llm.generate(
-        "dashboard",
+        "supervisor",
         "dashboard_planner",
         schema,
         DashboardAnalysisPlan,

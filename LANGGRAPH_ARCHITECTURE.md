@@ -54,7 +54,7 @@ flowchart LR
 - The dashboard service selects a ready dataset, creates an analysis run, invokes the graph, and maps graph state to the public response schema.
 - The dashboard graph carries run-scoped state only.
 - Supabase persists workspaces, datasets, fields, analysis runs, and the generated chart layout.
-- The configured Ollama client provides structured outputs for the planner, analysis, insight, and layout nodes.
+- The configured Ollama client gives the supervisor, KPI, anomaly, forecast, insight, layout, and chat agents separate model settings in `agent_models.toml`.
 
 ## 4. Upload pipeline
 
@@ -84,6 +84,8 @@ The `workspace` dependency first validates the Bearer token with Supabase Auth. 
 
 The selected analysis identifier is internal: it is not included in the current response schema.
 
+Each analysis run currently belongs to exactly one dataset because `analysis_runs.dataset_id` is a single foreign key. `load_dataset_context` uses the run and dataset identifiers to verify that relationship, then returns the linked dataset metadata and all ordered field definitions. Correct multi-dataset analysis will require an analysis-to-datasets join table and dataset-qualified field references before the graph state can change to `dataset_ids`.
+
 ### Response
 
 The successful response is HTTP 200 and conforms to the immutable `Dashboard` schema:
@@ -100,7 +102,8 @@ The successful response is HTTP 200 and conforms to the immutable `Dashboard` sc
 
 - Missing or invalid Bearer token: HTTP 401.
 - Expected `ValueError` from dashboard creation or graph validation: HTTP 422.
-- Other failures, including LLM, database, and response-construction failures: unhandled HTTP 500 responses.
+- Invalid KPI or anomaly worker output is omitted with a persisted warning, and invalid forecast worker output becomes an explicit unavailable result with a warning.
+- Other failures, including supervisor, insight, layout, database, and response-construction failures: unhandled HTTP 500 responses.
 
 If dashboard graph construction or execution fails after the analysis run is created, the service changes the run to `failed` and records `failure_stage = dashboard_generation` with the exception message in `failure_diagnostic` before re-raising the error.
 
@@ -227,5 +230,6 @@ The following documented capabilities are not part of the current runtime flow:
 2. Validation that chart and KPI SQL has executed successfully against the selected dataset.
 3. Authorised analysis-status endpoints.
 4. A separate `ChatState` LangGraph workflow that reads persisted dashboard evidence and executes guarded dataset queries.
+5. A multi-dataset analysis contract with an analysis-to-datasets join table and dataset-qualified field references.
 
 These changes should be designed together before changing the endpoint contract or enabling chat.

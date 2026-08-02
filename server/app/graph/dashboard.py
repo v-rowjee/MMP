@@ -1,7 +1,8 @@
 """Dashboard LangGraph workflow skeleton."""
 
 from datetime import datetime, timezone
-from typing import Any, Required, TypedDict
+from operator import add
+from typing import Annotated, Any, Required, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
@@ -29,7 +30,7 @@ class DashboardState(TypedDict, total=False):
     insights: list[dict[str, Any]]
     recommendations: list[dict[str, Any]]
     dashboard: dict[str, Any]
-    errors: list[str]
+    errors: Annotated[list[str], add]
     generated_at: str
 
 

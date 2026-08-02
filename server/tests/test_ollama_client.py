@@ -35,7 +35,7 @@ def test_generate_uses_the_configured_agent_model_prompt_and_options(monkeypatch
     client = OllamaClient()
 
     response = client.generate(
-        "dashboard",
+        "supervisor",
         "dashboard_planner",
         {"fields": [{"name": "amount"}]},
         DashboardAnalysisPlan,
@@ -59,7 +59,15 @@ def test_generate_uses_the_configured_agent_model_prompt_and_options(monkeypatch
 def test_loads_all_agent_configurations_from_one_file():
     client = OllamaClient()
 
-    assert set(client.agents) == {"chat", "dashboard", "insights", "supervisor"}
+    assert set(client.agents) == {
+        "supervisor",
+        "kpi",
+        "anomaly",
+        "forecast",
+        "insights",
+        "layout",
+        "chat",
+    }
     assert {config["model"] for config in client.agents.values()} == {
         "nemotron-3-super:cloud"
     }
@@ -79,8 +87,8 @@ def test_returns_one_error_for_ollama_failures(monkeypatch):
     monkeypatch.setattr("app.llm.client.urlopen", fake_urlopen)
     client = OllamaClient()
 
-    with pytest.raises(RuntimeError, match="agent='dashboard'"):
-        client.generate("dashboard", "dashboard_planner", {}, DashboardAnalysisPlan)
+    with pytest.raises(RuntimeError, match="agent='supervisor'"):
+        client.generate("supervisor", "dashboard_planner", {}, DashboardAnalysisPlan)
 
 
 def test_loads_dashboard_prompts():
@@ -98,3 +106,21 @@ def test_loads_dashboard_prompts():
 
     assert all(prompt.startswith("role: ") for prompt in prompts)
     assert all("task: " in prompt and "output: " in prompt for prompt in prompts)
+
+
+@pytest.mark.parametrize(
+    ("prompt_name", "response_keys"),
+    [
+        ("dashboard_planner", ("focus_areas", "kpi_fields", "trend_fields", "anomaly_fields", "forecast_fields")),
+        ("kpis_and_trends", ("kpis", "trends")),
+        ("anomalies", ("anomalies",)),
+        ("forecasts", ("forecasts",)),
+        ("insights", ("insights", "recommendations")),
+        ("dashboard_layout", ("charts",)),
+    ],
+)
+def test_dashboard_prompts_name_their_valid_response_keys(prompt_name, response_keys):
+    prompt = OllamaClient()._prompt(prompt_name)
+
+    for key in response_keys:
+        assert f'"{key}"' in prompt

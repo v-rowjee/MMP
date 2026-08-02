@@ -16,7 +16,7 @@ def build_dashboard(
     recommendations: list[dict[str, Any]],
 ) -> dict[str, Any]:
     dashboard = llm.generate(
-        "dashboard",
+        "layout",
         "dashboard_layout",
         {
             "schema": schema,

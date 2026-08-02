@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 
-from app.deps import workspace
+from app.core.deps import workspace
 from app.schemas.upload import UploadResponse
-from app.services.ingestion.service import IngestionService
+from app.datasets.service import IngestionService
 
 router = APIRouter(prefix="/upload", tags=["upload"])
 

@@ -2,7 +2,7 @@
 
 from supabase import Client, create_client
 
-from app.config import Settings
+from app.core.config import Settings
 
 
 def create_database(settings: Settings) -> Client:

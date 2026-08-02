@@ -2,9 +2,9 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from app.deps import workspace
+from app.core.deps import workspace
+from app.dashboard.service import DashboardService
 from app.schemas.dashboard import Dashboard
-from app.services.dashboard.service import DashboardService
 
 
 router = APIRouter(tags=["dashboard"])

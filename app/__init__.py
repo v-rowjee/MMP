@@ -1,0 +1,1 @@
+"""MMP backend application package."""

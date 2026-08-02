@@ -1,12 +1,17 @@
 """Dashboard service façade."""
 
+from datetime import datetime, timezone
 from typing import Any
 
 from app.llm.client import OllamaClient
-from app.services.dashboard import agents
+from app.schemas.dashboard import (
+    AnomalySection,
+    Dashboard,
+    DataSummary,
+    DatasetMetadata,
+    ForecastSection,
+)
 from app.services.dashboard.repository import DashboardRepository
-from app.services.dashboard.structured_output import DashboardStructuredOutputService
-from app.services.dashboard.validation import DashboardValidationService
 
 
 class DashboardService:
@@ -18,79 +23,68 @@ class DashboardService:
         self.db = db
         self.llm = llm or OllamaClient()
         self.repository = DashboardRepository(db)
-        self.validation = DashboardValidationService()
-        self.structured_output = DashboardStructuredOutputService(self.llm)
 
-    def load_dataset_context(self, analysis_id: str, dataset_id: str) -> dict[str, Any]:
-        return self.repository.load_dataset_context(analysis_id, dataset_id)
+    def generate_dashboard(self, workspace_id: str) -> Dashboard:
+        from app.graph.dashboard import build_dashboard_graph
 
-    def plan_dashboard_analysis(self, schema: dict[str, Any]) -> dict[str, Any]:
-        return agents.plan_dashboard_analysis(self.structured_output, schema)
-
-    def calculate_kpis_and_trends(
-        self,
-        schema: dict[str, Any],
-        analysis_plan: dict[str, Any],
-    ) -> dict[str, list[dict[str, Any]]]:
-        return agents.calculate_kpis_and_trends(
-            self.structured_output, schema, analysis_plan
+        analysis = self.repository.create_analysis_for_workspace(workspace_id)
+        state = build_dashboard_graph(self.db, self.llm).invoke(
+            {
+                "analysis_id": analysis["id"],
+                "dataset_id": analysis["dataset_id"],
+            }
         )
+        return self._build_response(workspace_id, state)
 
-    def detect_anomalies(
-        self,
-        schema: dict[str, Any],
-        analysis_plan: dict[str, Any],
-    ) -> dict[str, list[dict[str, Any]]]:
-        return agents.detect_anomalies(self.structured_output, schema, analysis_plan)
-
-    def generate_forecasts(
-        self,
-        schema: dict[str, Any],
-        analysis_plan: dict[str, Any],
-    ) -> dict[str, list[dict[str, Any]]]:
-        return agents.generate_forecasts(self.structured_output, schema, analysis_plan)
-
-    def synthesise_insights(
-        self,
-        kpis: list[dict[str, Any]],
-        trends: list[dict[str, Any]],
-        anomalies: list[dict[str, Any]],
-        forecasts: list[dict[str, Any]],
-    ) -> dict[str, list[dict[str, Any]]]:
-        return agents.synthesise_insights(
-            self.structured_output, kpis, trends, anomalies, forecasts
+    def _build_response(self, workspace_id: str, state: dict[str, Any]) -> Dashboard:
+        schema = state["schema"]
+        dataset = schema["dataset"]
+        fields = schema["fields"]
+        profile = dataset["profile"]
+        date_columns = sum("date" in field["dtype"].lower() for field in fields)
+        numeric_columns = sum(field["role"] == "measure" for field in fields)
+        text_columns = sum(
+            field["role"] == "dimension" and "date" not in field["dtype"].lower()
+            for field in fields
         )
+        forecasts = state.get("forecasts", [])
+        anomalies = state.get("anomalies", [])
 
-    def build_dashboard(
-        self,
-        schema: dict[str, Any],
-        kpis: list[dict[str, Any]],
-        trends: list[dict[str, Any]],
-        anomalies: list[dict[str, Any]],
-        forecasts: list[dict[str, Any]],
-        insights: list[dict[str, Any]],
-        recommendations: list[dict[str, Any]],
-    ) -> dict[str, Any]:
-        return agents.build_dashboard(
-            self.structured_output,
-            schema,
-            kpis,
-            trends,
-            anomalies,
-            forecasts,
-            insights,
-            recommendations,
+        return Dashboard(
+            workspace_id=workspace_id,
+            generated_at=datetime.now(timezone.utc),
+            metadata=[
+                DatasetMetadata(
+                    name=dataset["name"],
+                    source_filename=dataset["source_filename"],
+                    row_count=dataset["row_count"],
+                    column_count=profile["column_count"],
+                    uploaded_at=dataset["uploaded_at"],
+                )
+            ],
+            summary=DataSummary(
+                numeric_columns=numeric_columns,
+                categorical_columns=0,
+                text_columns=text_columns,
+                date_columns=date_columns,
+                missing_values=profile.get("missing_values", 0),
+            ),
+            kpis=state.get("kpis", []),
+            charts=state["dashboard"].get("charts", []),
+            anomalies=AnomalySection(
+                available=bool(anomalies),
+                items=anomalies,
+                reason=None if anomalies else "No anomalies were detected.",
+            ),
+            forecast=(
+                ForecastSection.model_validate(forecasts[0])
+                if forecasts
+                else ForecastSection(
+                    available=False,
+                    reason="No forecast was generated.",
+                )
+            ),
+            insights=state.get("insights", []),
+            recommendations=state.get("recommendations", []),
+            warnings=state.get("errors", []),
         )
-
-    def validate_dashboard(self, dashboard: dict[str, Any]) -> list[str]:
-        return self.validation.validate(dashboard)
-
-    def persist_dashboard(
-        self,
-        analysis_id: str,
-        dataset_id: str,
-        dashboard: dict[str, Any],
-    ) -> None:
-        if self.validate_dashboard(dashboard):
-            raise ValueError("Dashboard validation failed")
-        self.repository.persist_dashboard(analysis_id, dataset_id, dashboard)

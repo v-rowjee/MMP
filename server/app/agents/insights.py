@@ -3,11 +3,10 @@
 from typing import Any
 
 from app.schemas.dashboard import InsightSynthesis
-from app.services.dashboard.structured_output import DashboardStructuredOutputService
 
 
 def synthesise_insights(
-    structured_output: DashboardStructuredOutputService,
+    llm: Any,
     kpis: list[dict[str, Any]],
     trends: list[dict[str, Any]],
     anomalies: list[dict[str, Any]],
@@ -19,13 +18,12 @@ def synthesise_insights(
         "anomalies": _with_evidence_ids("anomalies", anomalies),
         "forecasts": _with_evidence_ids("forecasts", forecasts),
     }
-    results = structured_output.request(
+    results = llm.generate(
         "insights",
         "insights",
         context,
         InsightSynthesis,
-        "Invalid insight synthesis",
-    )
+    ).model_dump()
     evidence_ids = {item["id"] for group in context.values() for item in group}
     outputs = results["insights"] + results["recommendations"]
     if any(

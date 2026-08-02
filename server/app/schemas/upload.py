@@ -10,6 +10,5 @@ class UploadedFile(BaseModel):
 
 
 class UploadResponse(BaseModel):
-    workspace_id: str
     processing_status: Literal["uploaded"]
     files: list[UploadedFile]

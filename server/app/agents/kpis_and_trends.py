@@ -3,21 +3,19 @@
 from typing import Any
 
 from app.schemas.dashboard import KPIAndTrendAnalysis
-from app.services.dashboard.structured_output import DashboardStructuredOutputService
 
 
 def calculate_kpis_and_trends(
-    structured_output: DashboardStructuredOutputService,
+    llm: Any,
     schema: dict[str, Any],
     analysis_plan: dict[str, Any],
 ) -> dict[str, list[dict[str, Any]]]:
-    results = structured_output.request(
+    results = llm.generate(
         "dashboard",
         "kpis_and_trends",
         {"schema": schema, "analysis_plan": analysis_plan},
         KPIAndTrendAnalysis,
-        "Invalid KPI and trend analysis",
-    )
+    ).model_dump()
     fields = {field["name"] for field in schema.get("fields", [])}
     trend_fields = set(analysis_plan.get("trend_fields", []))
     if any(

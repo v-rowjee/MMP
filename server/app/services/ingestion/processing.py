@@ -50,6 +50,7 @@ def process_file(file: UploadFile, max_size: int) -> ProcessedFile:
             zip(frame.columns, original_names, strict=True)
         )
     ]
+    missing_values = sum(frame.get_column(name).null_count() for name in frame.columns)
     parquet = BytesIO()
     frame.write_parquet(parquet)
     return ProcessedFile(
@@ -61,6 +62,6 @@ def process_file(file: UploadFile, max_size: int) -> ProcessedFile:
         profile={
             "row_count": frame.height,
             "column_count": frame.width,
-            "missing_values": sum(field["profile"]["null_count"] for field in fields),
+            "missing_values": missing_values,
         },
     )

@@ -3,21 +3,19 @@
 from typing import Any
 
 from app.schemas.dashboard import AnomalyAnalysis
-from app.services.dashboard.structured_output import DashboardStructuredOutputService
 
 
 def detect_anomalies(
-    structured_output: DashboardStructuredOutputService,
+    llm: Any,
     schema: dict[str, Any],
     analysis_plan: dict[str, Any],
 ) -> dict[str, list[dict[str, Any]]]:
-    results = structured_output.request(
+    results = llm.generate(
         "dashboard",
         "anomalies",
         {"schema": schema, "analysis_plan": analysis_plan},
         AnomalyAnalysis,
-        "Invalid anomaly analysis",
-    )
+    ).model_dump()
     fields = {field["name"] for field in schema.get("fields", [])}
     anomaly_fields = set(analysis_plan.get("anomaly_fields", []))
     dataset_name = schema.get("dataset", {}).get("name")

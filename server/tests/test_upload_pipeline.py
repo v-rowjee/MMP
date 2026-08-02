@@ -75,7 +75,6 @@ def test_upload_creates_profile_metadata_and_parquet():
     response = upload(db)
 
     dataset = db.rows["datasets"][0]
-    assert response.workspace_id == "ws_12345678"
     assert response.processing_status == "uploaded"
     assert [item.model_dump() for item in response.files] == [
         {"filename": "sales.csv", "row_count": 2, "column_count": 2}
@@ -106,7 +105,6 @@ def test_upload_accepts_multiple_files():
         file(b"Customer,Spend\nAda,20\n", "customers.csv"),
     )
 
-    assert response.workspace_id == "ws_12345678"
     assert [item.filename for item in response.files] == ["sales.csv", "customers.csv"]
     assert len(db.rows["datasets"]) == 2
 

@@ -44,7 +44,6 @@ class IngestionService:
             raise
 
         return UploadResponse(
-            workspace_id=workspace_id,
             processing_status="uploaded",
             files=[
                 UploadedFile(

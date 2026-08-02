@@ -1,25 +1,26 @@
 """Dashboard generation endpoints."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException, Request
 
+from app.deps import workspace
 from app.schemas.dashboard import Dashboard
+from app.services.dashboard.service import DashboardService
 
 
 router = APIRouter(tags=["dashboard"])
 
 
-@router.post(
-    "/dashboard/{workspace_id}",
-    response_model=Dashboard,
-)
+@router.post("/dashboard", response_model=Dashboard)
 async def generate_dashboard(
-    workspace_id: str,
+    request: Request,
+    workspace_id: str = Depends(workspace),
 ) -> Dashboard:
-    """
-    Generate an analytics dashboard.
-    """
-
-    raise NotImplementedError
+    try:
+        return DashboardService(request.app.state.db).generate_dashboard(
+            workspace_id
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 @router.get(

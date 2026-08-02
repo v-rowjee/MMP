@@ -3,8 +3,10 @@ from types import SimpleNamespace
 import pytest
 
 from app.graph.dashboard import DashboardWorkflow, build_dashboard_graph
-from app.services.dashboard import agents as dashboard_agents
-from app.services.dashboard.service import DashboardService
+from app import agents as dashboard_agents
+from app.llm.client import OllamaError
+from app.services.dashboard.repository import DashboardRepository
+from app.services.dashboard.validation import DashboardValidationService
 
 
 class Query:
@@ -63,27 +65,34 @@ class Database:
         return Query(self, table)
 
 
-class Planner:
-    def chat(self, _, messages, **_kwargs):
-        prompt = messages[0]["content"]
-        if "task: plan_analysis" in prompt:
+class TestLLM:
+    def generate(self, _agent, prompt_name, _context, response_model):
+        try:
+            return response_model.model_validate_json(self.response(prompt_name))
+        except ValueError as error:
+            raise OllamaError(f"prompt={prompt_name!r}: {error}") from error
+
+
+class Planner(TestLLM):
+    def response(self, prompt_name):
+        if prompt_name == "dashboard_planner":
             return (
                 '{"focus_areas":["Sales performance"],"kpi_fields":["amount"],'
                 '"trend_fields":["amount"],"anomaly_fields":["amount"],"forecast_fields":["amount"]}'
             )
-        if "task: detect_anomalies" in prompt:
+        if prompt_name == "anomalies":
             return (
                 '{"anomalies":[{"dataset":"sales","column":"amount","timestamp":null,'
                 '"value":99.0,"expected":15.0,"score":2.5,"reason":"Outside expected range"}]}'
             )
-        if "task: generate_forecasts" in prompt:
+        if prompt_name == "forecasts":
             return (
                 '{"forecasts":[{"available":true,"model":"linear","target":"amount",'
                 '"granularity":"monthly","horizon":2,"backtest_mape":12.5,'
                 '"points":[{"timestamp":"2026-01-01","actual":null,"prediction":35.0,'
                 '"lower_bound":30.0,"upper_bound":40.0}],"reason":null}]}'
             )
-        if "task: synthesise_insights" in prompt:
+        if prompt_name == "insights":
             return (
                 '{"insights":[{"type":"summary","title":"Amount is rising",'
                 '"text":"Amount increased.","evidence":["kpis[0]","trends[0]"]}],'
@@ -91,7 +100,7 @@ class Planner:
                 '"priority":"medium","reason":"An unusual amount was detected.",'
                 '"evidence":["anomalies[0]"]}]}'
             )
-        if "task: build_dashboard_layout" in prompt:
+        if prompt_name == "dashboard_layout":
             return (
                 '{"charts":[{"id":"amount_over_time","title":"Amount over time",'
                 '"type":"line","dataset":"sales","x_axis":"order_id",'
@@ -106,29 +115,25 @@ class Planner:
         )
 
 
-class UnknownFieldPlanner:
-    def chat(self, *_args, **_kwargs):
+class UnknownFieldPlanner(TestLLM):
+    def response(self, *_args):
         return (
             '{"focus_areas":["Sales performance"],"kpi_fields":["missing"],'
             '"trend_fields":[],"anomaly_fields":[],"forecast_fields":[]}'
         )
 
 
-class InvalidPlanner:
-    def chat(self, *_args, **_kwargs):
+class InvalidPlanner(TestLLM):
+    def response(self, *_args):
         return "not json"
 
 
-def test_dashboard_service_delegates_to_planner_agent(monkeypatch):
-    service = DashboardService(Database(), Planner())
+def test_dashboard_graph_delegates_to_planner_agent(monkeypatch):
+    workflow = DashboardWorkflow(Database(), Planner())
     expected = {"focus_areas": ["Sales performance"]}
-    monkeypatch.setattr(
-        dashboard_agents,
-        "plan_dashboard_analysis",
-        lambda *_: expected,
-    )
+    monkeypatch.setattr("app.graph.dashboard.plan_dashboard_analysis", lambda *_: expected)
 
-    assert service.plan_dashboard_analysis({}) == expected
+    assert workflow.plan_dashboard_analysis({}) == {"analysis_plan": expected}
 
 
 def test_dashboard_graph_runs_full_skeleton_flow():
@@ -163,84 +168,91 @@ def test_load_dataset_context_rejects_mismatched_analysis_run():
 
 def test_plan_rejects_unknown_fields():
     with pytest.raises(ValueError, match="unknown fields"):
-        DashboardService(Database(), UnknownFieldPlanner()).plan_dashboard_analysis(
+        dashboard_agents.plan_dashboard_analysis(
+            UnknownFieldPlanner(),
             {"fields": [{"name": "amount"}]}
         )
 
 
 def test_plan_rejects_invalid_model_response():
-    with pytest.raises(ValueError, match="Invalid dashboard analysis plan"):
-        DashboardService(Database(), InvalidPlanner()).plan_dashboard_analysis(
+    with pytest.raises(OllamaError, match="Invalid JSON"):
+        dashboard_agents.plan_dashboard_analysis(
+            InvalidPlanner(),
             {"fields": [{"name": "amount"}]}
         )
 
 
-class InvalidTrendPlanner:
-    def chat(self, *_args, **_kwargs):
+class InvalidTrendPlanner(TestLLM):
+    def response(self, *_args):
         return "not json"
 
 
 def test_kpi_and_trend_analysis_rejects_invalid_model_response():
-    with pytest.raises(ValueError, match="Invalid KPI and trend analysis"):
-        DashboardService(Database(), InvalidTrendPlanner()).calculate_kpis_and_trends(
+    with pytest.raises(OllamaError, match="Invalid JSON"):
+        dashboard_agents.calculate_kpis_and_trends(
+            InvalidTrendPlanner(),
             {"fields": [{"name": "amount"}]},
             {"kpi_fields": ["amount"], "trend_fields": ["amount"]},
         )
 
 
-class InvalidAnomalyPlanner:
-    def chat(self, *_args, **_kwargs):
+class InvalidAnomalyPlanner(TestLLM):
+    def response(self, *_args):
         return "not json"
 
 
 def test_anomaly_analysis_rejects_invalid_model_response():
-    with pytest.raises(ValueError, match="Invalid anomaly analysis"):
-        DashboardService(Database(), InvalidAnomalyPlanner()).detect_anomalies(
+    with pytest.raises(OllamaError, match="Invalid JSON"):
+        dashboard_agents.detect_anomalies(
+            InvalidAnomalyPlanner(),
             {"fields": [{"name": "amount"}]},
             {"anomaly_fields": ["amount"]},
         )
 
 
-class InvalidForecastPlanner:
-    def chat(self, *_args, **_kwargs):
+class InvalidForecastPlanner(TestLLM):
+    def response(self, *_args):
         return "not json"
 
 
 def test_forecast_analysis_rejects_invalid_model_response():
-    with pytest.raises(ValueError, match="Invalid forecast analysis"):
-        DashboardService(Database(), InvalidForecastPlanner()).generate_forecasts(
+    with pytest.raises(OllamaError, match="Invalid JSON"):
+        dashboard_agents.generate_forecasts(
+            InvalidForecastPlanner(),
             {"fields": [{"name": "amount"}]},
             {"forecast_fields": ["amount"]},
         )
 
 
-class InvalidInsightPlanner:
-    def chat(self, *_args, **_kwargs):
+class InvalidInsightPlanner(TestLLM):
+    def response(self, *_args):
         return "not json"
 
 
 def test_insight_synthesis_rejects_invalid_model_response():
-    with pytest.raises(ValueError, match="Invalid insight synthesis"):
-        DashboardService(Database(), InvalidInsightPlanner()).synthesise_insights(
+    with pytest.raises(OllamaError, match="Invalid JSON"):
+        dashboard_agents.synthesise_insights(
+            InvalidInsightPlanner(),
             [], [], [], []
         )
 
 
-class InvalidDashboardPlanner:
-    def chat(self, *_args, **_kwargs):
+class InvalidDashboardPlanner(TestLLM):
+    def response(self, *_args):
         return "not json"
 
 
 def test_dashboard_layout_rejects_invalid_model_response():
-    with pytest.raises(ValueError, match="Invalid dashboard layout"):
-        DashboardService(Database(), InvalidDashboardPlanner()).build_dashboard(
+    with pytest.raises(OllamaError, match="Invalid JSON"):
+        dashboard_agents.build_dashboard(
+            InvalidDashboardPlanner(),
             {"fields": [{"name": "amount"}]},
             [], [], [], [], [], [],
         )
 
 
 def test_validate_dashboard_reports_invalid_chart_configuration():
-    errors = DashboardService(Database()).validate_dashboard(
+    errors = DashboardValidationService().validate(
         {
             "charts": [
                 {
@@ -272,7 +284,7 @@ def test_validate_dashboard_reports_invalid_chart_configuration():
 
 
 def test_validate_dashboard_reports_schema_errors():
-    errors = DashboardService(Database()).validate_dashboard({"charts": [{"id": "amount"}]})
+    errors = DashboardValidationService().validate({"charts": [{"id": "amount"}]})
 
     assert any(error.startswith("charts.0.title:") for error in errors)
 
@@ -292,7 +304,7 @@ def test_persist_dashboard_saves_layout_and_marks_analysis_ready():
         ]
     }
 
-    DashboardService(db).persist_dashboard("analysis_123", "dataset_123", dashboard)
+    DashboardRepository(db).persist_dashboard("analysis_123", "dataset_123", dashboard)
 
     analysis = db.rows["analysis_runs"][0]
     assert analysis["dashboard"] == dashboard
@@ -301,6 +313,6 @@ def test_persist_dashboard_saves_layout_and_marks_analysis_ready():
 
 def test_persist_dashboard_rejects_mismatched_dataset():
     with pytest.raises(ValueError, match="does not match"):
-        DashboardService(Database()).persist_dashboard(
+        DashboardRepository(Database()).persist_dashboard(
             "analysis_123", "dataset_456", {"charts": []}
         )

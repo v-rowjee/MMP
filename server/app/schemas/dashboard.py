@@ -20,7 +20,7 @@ class DatasetMetadata(BaseModel):
 
     row_count: int
     column_count: int
-    size_bytes: int
+    size_bytes: int | None = None
 
     uploaded_at: datetime
 
@@ -39,7 +39,7 @@ class DataSummary(BaseModel):
     date_columns: int
 
     missing_values: int
-    duplicate_rows: int
+    duplicate_rows: int | None = None
 
     summary_text: str | None = None
 

@@ -54,16 +54,6 @@ class IngestionRepository:
             [{**field, "dataset_id": dataset_id} for field in file.fields]
         ).execute()
 
-    def create_analysis(self, analysis_id: str, dataset_id: str, workspace_id: str) -> None:
-        self.db.table("analysis_runs").insert(
-            {
-                "id": analysis_id,
-                "dataset_id": dataset_id,
-                "workspace_id": workspace_id,
-                "status": "dashboard_generating",
-            }
-        ).execute()
-
     def cleanup(self, dataset_id: str, paths: list[str]) -> None:
         self.db.table("datasets").delete().eq("id", dataset_id).execute()
         self.storage.remove(paths)

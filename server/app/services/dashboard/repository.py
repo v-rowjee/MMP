@@ -21,7 +21,7 @@ class DashboardRepository:
 
         dataset = (
             self.db.table("datasets")
-            .select("id, name, source_filename, row_count, meta")
+            .select("id, name, source_filename, row_count, meta, uploaded_at")
             .eq("id", dataset_id)
             .maybe_single()
             .execute()
@@ -45,9 +45,41 @@ class DashboardRepository:
                 "source_filename": dataset["source_filename"],
                 "row_count": dataset["row_count"],
                 "profile": dataset.get("meta", {}).get("profile", {}),
+                "uploaded_at": dataset.get("uploaded_at"),
             },
             "fields": sorted(fields, key=lambda field: field["position"]),
         }
+
+    def create_analysis_for_workspace(self, workspace_id: str) -> dict[str, Any]:
+        datasets = (
+            self.db.table("datasets")
+            .select("id")
+            .eq("workspace_id", workspace_id)
+            .eq("status", "ready")
+            .order("uploaded_at", desc=True)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        if not datasets:
+            raise ValueError("No ready dataset found for workspace")
+
+        analysis = (
+            self.db.table("analysis_runs")
+            .insert(
+                {
+                    "dataset_id": datasets[0]["id"],
+                    "workspace_id": workspace_id,
+                    "status": "dashboard_generating",
+                }
+            )
+            .execute()
+            .data
+        )
+        if not analysis:
+            raise RuntimeError("Dashboard analysis creation failed")
+        return analysis[0] if isinstance(analysis, list) else analysis
 
     def persist_dashboard(
         self,

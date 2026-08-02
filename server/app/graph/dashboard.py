@@ -4,7 +4,16 @@ from typing import Any, Required, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from app.services.dashboard.service import DashboardService
+from app.agents import (
+    build_dashboard,
+    calculate_kpis_and_trends,
+    detect_anomalies,
+    generate_forecasts,
+    plan_dashboard_analysis,
+    synthesise_insights,
+)
+from app.services.dashboard.repository import DashboardRepository
+from app.services.dashboard.validation import DashboardValidationService
 
 
 class DashboardState(TypedDict, total=False):
@@ -24,7 +33,9 @@ class DashboardState(TypedDict, total=False):
 
 class DashboardWorkflow:
     def __init__(self, db: Any, llm: Any | None = None):
-        self.dashboard_service = DashboardService(db, llm)
+        self.repository = DashboardRepository(db)
+        self.llm = llm
+        self.validation = DashboardValidationService()
 
     def build(self):
         graph = StateGraph(DashboardState)
@@ -55,7 +66,7 @@ class DashboardWorkflow:
 
     def load_dataset_context(self, state: DashboardState) -> dict[str, Any]:
         return {
-            "schema": self.dashboard_service.load_dataset_context(
+            "schema": self.repository.load_dataset_context(
                 state["analysis_id"],
                 state["dataset_id"],
             )
@@ -63,31 +74,36 @@ class DashboardWorkflow:
 
     def plan_dashboard_analysis(self, state: DashboardState) -> dict[str, Any]:
         return {
-            "analysis_plan": self.dashboard_service.plan_dashboard_analysis(
+            "analysis_plan": plan_dashboard_analysis(
+                self.llm,
                 state.get("schema", {}),
             )
         }
 
     def calculate_kpis_and_trends(self, state: DashboardState) -> dict[str, Any]:
-        return self.dashboard_service.calculate_kpis_and_trends(
+        return calculate_kpis_and_trends(
+            self.llm,
             state.get("schema", {}),
             state.get("analysis_plan", {}),
         )
 
     def detect_anomalies(self, state: DashboardState) -> dict[str, Any]:
-        return self.dashboard_service.detect_anomalies(
+        return detect_anomalies(
+            self.llm,
             state.get("schema", {}),
             state.get("analysis_plan", {}),
         )
 
     def generate_forecasts(self, state: DashboardState) -> dict[str, Any]:
-        return self.dashboard_service.generate_forecasts(
+        return generate_forecasts(
+            self.llm,
             state.get("schema", {}),
             state.get("analysis_plan", {}),
         )
 
     def synthesise_insights(self, state: DashboardState) -> dict[str, Any]:
-        return self.dashboard_service.synthesise_insights(
+        return synthesise_insights(
+            self.llm,
             state.get("kpis", []),
             state.get("trends", []),
             state.get("anomalies", []),
@@ -96,7 +112,8 @@ class DashboardWorkflow:
 
     def build_dashboard(self, state: DashboardState) -> dict[str, Any]:
         return {
-            "dashboard": self.dashboard_service.build_dashboard(
+            "dashboard": build_dashboard(
+                self.llm,
                 state.get("schema", {}),
                 state.get("kpis", []),
                 state.get("trends", []),
@@ -109,13 +126,15 @@ class DashboardWorkflow:
 
     def validate_dashboard(self, state: DashboardState) -> dict[str, Any]:
         return {
-            "errors": self.dashboard_service.validate_dashboard(
+            "errors": self.validation.validate(
                 state.get("dashboard", {}),
             )
         }
 
     def persist_dashboard(self, state: DashboardState) -> dict[str, Any]:
-        self.dashboard_service.persist_dashboard(
+        if self.validation.validate(state.get("dashboard", {})):
+            raise ValueError("Dashboard validation failed")
+        self.repository.persist_dashboard(
             state["analysis_id"],
             state["dataset_id"],
             state.get("dashboard", {}),

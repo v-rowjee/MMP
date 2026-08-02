@@ -73,10 +73,10 @@ Authenticate user
 - Preserve the original file and create a processed Parquet version.
 - Profile columns and record schema metadata.
 - Persist the dataset, file locations, and processing status.
-- Return the workspace identifier that contains all uploaded datasets.
+- Resolve the authenticated user's workspace from their verified JWT.
 - Remove incomplete records and files when processing fails.
 
-The upload response returns the workspace identifier, uploaded file summaries, and an `uploaded` status. Dataset records remain internal. The frontend uses the workspace identifier to invoke dashboard generation.
+The upload response returns uploaded file summaries and an `uploaded` status. Dataset and workspace identifiers remain internal. The frontend invokes dashboard generation with its Bearer token; the backend verifies the token and resolves the user's workspace.
 
 ## 5. Dashboard LangGraph
 
@@ -113,13 +113,13 @@ flowchart TD
 | Operation | Implementation |
 |---|---|
 | Dataset and schema loading | Application service and Supabase |
-| Analysis planning | Dashboard service using the LLM client and schema metadata |
+| Analysis planning | Dashboard graph node calling the planner agent with the LLM client and schema metadata |
 | KPI calculation | DuckDB or deterministic code |
 | Trend calculation | DuckDB or deterministic code |
 | Anomaly detection | Statistical or machine-learning model |
 | Forecasting | Forecasting model |
-| Insight synthesis | LLM agent using verified analytical outputs |
-| Dashboard construction | Dashboard agent using validated results |
+| Insight synthesis | Dashboard graph node calling the insight agent with verified analytical outputs |
+| Dashboard construction | Dashboard graph node calling the dashboard agent with validated results |
 | Output validation | Deterministic schema and evidence checks |
 | Persistence | Supabase repository layer |
 
@@ -287,7 +287,7 @@ The FastAPI layer exposes the workflows to the frontend.
 
 | Endpoint responsibility | Behaviour |
 |---|---|
-| Upload dataset | Validate, process, persist, and return the workspace identifier |
+| Upload dataset | Validate and persist files in the authenticated user's workspace |
 | Read analysis status | Return the current upload or dashboard status |
 | Read dashboard | Return the persisted dashboard for an authorised user |
 | Send chat message | Invoke the chat graph and return its grounded answer |
@@ -299,7 +299,7 @@ The FastAPI layer exposes the workflows to the frontend.
 
 1. The user signs in.
 2. The user uploads one or more supported files.
-3. The interface calls dashboard generation with the returned workspace identifier.
+3. The interface calls dashboard generation with the user's Bearer token.
 4. The interface displays dashboard-generation status.
 5. The completed dashboard is loaded from persisted results.
 6. Chat becomes available.

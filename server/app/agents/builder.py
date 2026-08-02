@@ -3,11 +3,10 @@
 from typing import Any
 
 from app.schemas.dashboard import DashboardLayout
-from app.services.dashboard.structured_output import DashboardStructuredOutputService
 
 
 def build_dashboard(
-    structured_output: DashboardStructuredOutputService,
+    llm: Any,
     schema: dict[str, Any],
     kpis: list[dict[str, Any]],
     trends: list[dict[str, Any]],
@@ -16,9 +15,9 @@ def build_dashboard(
     insights: list[dict[str, Any]],
     recommendations: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    dashboard = structured_output.request(
+    dashboard = llm.generate(
         "dashboard",
-        "dashboard_builder",
+        "dashboard_layout",
         {
             "schema": schema,
             "kpis": kpis,
@@ -29,8 +28,7 @@ def build_dashboard(
             "recommendations": recommendations,
         },
         DashboardLayout,
-        "Invalid dashboard layout",
-    )
+    ).model_dump()
     fields = {field["name"] for field in schema.get("fields", [])}
     dataset_name = schema.get("dataset", {}).get("name")
     if any(

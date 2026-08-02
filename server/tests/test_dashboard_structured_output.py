@@ -1,8 +1,7 @@
-from app.llm.prompt_loader import PromptLoader
+from app.services.dashboard.structured_output import load_prompt
 
 
 def test_dashboard_prompts_load_from_toon_files():
-    loader = PromptLoader()
     names = [
         "dashboard_planner",
         "kpis_and_trends",
@@ -12,7 +11,7 @@ def test_dashboard_prompts_load_from_toon_files():
         "dashboard_builder",
     ]
 
-    prompts = [loader.load(name) for name in names]
+    prompts = [load_prompt(name) for name in names]
 
     assert all(prompt.startswith("role: ") for prompt in prompts)
     assert all("task: " in prompt and "output: " in prompt for prompt in prompts)

@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.graph.dashboard import DashboardWorkflow, build_dashboard_graph
+from app.services.dashboard import agents as dashboard_agents
 from app.services.dashboard.service import DashboardService
 
 
@@ -116,6 +117,18 @@ class UnknownFieldPlanner:
 class InvalidPlanner:
     def chat(self, *_args, **_kwargs):
         return "not json"
+
+
+def test_dashboard_service_delegates_to_planner_agent(monkeypatch):
+    service = DashboardService(Database(), Planner())
+    expected = {"focus_areas": ["Sales performance"]}
+    monkeypatch.setattr(
+        dashboard_agents,
+        "plan_dashboard_analysis",
+        lambda *_: expected,
+    )
+
+    assert service.plan_dashboard_analysis({}) == expected
 
 
 def test_dashboard_graph_runs_full_skeleton_flow():

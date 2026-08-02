@@ -1,0 +1,46 @@
+"""Insight synthesis agent."""
+
+from typing import Any
+
+from app.schemas.dashboard import InsightSynthesis
+from app.services.dashboard.structured_output import DashboardStructuredOutputService
+
+
+def synthesise_insights(
+    structured_output: DashboardStructuredOutputService,
+    kpis: list[dict[str, Any]],
+    trends: list[dict[str, Any]],
+    anomalies: list[dict[str, Any]],
+    forecasts: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    context = {
+        "kpis": _with_evidence_ids("kpis", kpis),
+        "trends": _with_evidence_ids("trends", trends),
+        "anomalies": _with_evidence_ids("anomalies", anomalies),
+        "forecasts": _with_evidence_ids("forecasts", forecasts),
+    }
+    results = structured_output.request(
+        "insights",
+        "insights",
+        context,
+        InsightSynthesis,
+        "Invalid insight synthesis",
+    )
+    evidence_ids = {item["id"] for group in context.values() for item in group}
+    outputs = results["insights"] + results["recommendations"]
+    if any(
+        not output["evidence"]
+        or any(evidence not in evidence_ids for evidence in output["evidence"])
+        for output in outputs
+    ):
+        raise ValueError("Insight synthesis contains unsupported evidence")
+    return results
+
+
+def _with_evidence_ids(
+    name: str, items: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    return [
+        {"id": f"{name}[{index}]", "data": item}
+        for index, item in enumerate(items)
+    ]

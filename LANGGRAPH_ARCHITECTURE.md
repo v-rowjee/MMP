@@ -52,7 +52,7 @@ flowchart LR
 
 ## 4. Upload pipeline
 
-The upload pipeline prepares data for analysis and starts dashboard generation.
+The upload pipeline prepares data for dashboard generation.
 
 ```text
 Authenticate user
@@ -62,8 +62,7 @@ Authenticate user
 → Profile columns
 → Create schema metadata
 → Store files and metadata
-→ Create an analysis run
-→ Invoke the dashboard graph
+→ Return the workspace identifier
 ```
 
 ### Responsibilities
@@ -74,11 +73,10 @@ Authenticate user
 - Preserve the original file and create a processed Parquet version.
 - Profile columns and record schema metadata.
 - Persist the dataset, file locations, and processing status.
-- Create an analysis run linked to the dataset.
-- Start dashboard generation.
+- Return the workspace identifier that contains all uploaded datasets.
 - Remove incomplete records and files when processing fails.
 
-The upload response returns the dataset identifier, analysis identifier, and current processing status.
+The upload response returns the workspace identifier, uploaded file summaries, and an `uploaded` status. Dataset records remain internal. The frontend uses the workspace identifier to invoke dashboard generation.
 
 ## 5. Dashboard LangGraph
 
@@ -289,7 +287,7 @@ The FastAPI layer exposes the workflows to the frontend.
 
 | Endpoint responsibility | Behaviour |
 |---|---|
-| Upload dataset | Validate, process, persist, and start dashboard generation |
+| Upload dataset | Validate, process, persist, and return the workspace identifier |
 | Read analysis status | Return the current upload or dashboard status |
 | Read dashboard | Return the persisted dashboard for an authorised user |
 | Send chat message | Invoke the chat graph and return its grounded answer |
@@ -301,11 +299,12 @@ The FastAPI layer exposes the workflows to the frontend.
 
 1. The user signs in.
 2. The user uploads one or more supported files.
-3. The interface displays processing and dashboard-generation status.
-4. The completed dashboard is loaded from persisted results.
-5. Chat becomes available.
-6. Each question invokes the chat graph.
-7. The answer may reference dashboard findings, new dataset calculations, or both.
+3. The interface calls dashboard generation with the returned workspace identifier.
+4. The interface displays dashboard-generation status.
+5. The completed dashboard is loaded from persisted results.
+6. Chat becomes available.
+7. Each question invokes the chat graph.
+8. The answer may reference dashboard findings, new dataset calculations, or both.
 
 ## 14. Validation and testing
 

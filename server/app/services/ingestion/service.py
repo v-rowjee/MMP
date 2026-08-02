@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from fastapi import UploadFile
 
-from app.schemas.upload import UploadResponse
+from app.schemas.upload import UploadedFile, UploadResponse
 from app.services.ingestion.processing import process_file
 from app.services.ingestion.repository import IngestionRepository
 
@@ -16,32 +16,42 @@ class IngestionService:
         self.max_file_bytes = max_file_bytes
 
     def upload_files(self, workspace_id: str, files: list[UploadFile]) -> UploadResponse:
-        if len(files) != 1:
-            raise ValueError("Upload one CSV file at a time")
+        if not files:
+            raise ValueError("Upload at least one CSV file")
 
-        file = process_file(files[0], self.max_file_bytes)
-        dataset_id, analysis_id = str(uuid4()), str(uuid4())
-        original_path = f"{workspace_id}/{dataset_id}/{file.filename}"
-        parquet_path = f"{workspace_id}/{dataset_id}/{file.name}.parquet"
+        processed_files = [process_file(file, self.max_file_bytes) for file in files]
+        if len({file.name for file in processed_files}) != len(processed_files):
+            raise ValueError("Uploaded files must have unique names")
+
+        stored_files: list[tuple[str, str, str]] = []
         try:
-            self.repository.store_files(original_path, parquet_path, file)
-            self.repository.create_dataset(
-                dataset_id,
-                workspace_id,
-                file,
-                original_path,
-                parquet_path,
-            )
-            self.repository.create_analysis(analysis_id, dataset_id, workspace_id)
+            for file in processed_files:
+                dataset_id = str(uuid4())
+                original_path = f"{workspace_id}/{dataset_id}/{file.filename}"
+                parquet_path = f"{workspace_id}/{dataset_id}/{file.name}.parquet"
+                stored_files.append((dataset_id, original_path, parquet_path))
+                self.repository.store_files(original_path, parquet_path, file)
+                self.repository.create_dataset(
+                    dataset_id,
+                    workspace_id,
+                    file,
+                    original_path,
+                    parquet_path,
+                )
         except Exception:
-            self.repository.cleanup(dataset_id, [original_path, parquet_path])
+            for dataset_id, original_path, parquet_path in stored_files:
+                self.repository.cleanup(dataset_id, [original_path, parquet_path])
             raise
 
         return UploadResponse(
-            dataset_id=dataset_id,
-            analysis_id=analysis_id,
-            processing_status="dashboard_generating",
-            filename=file.filename,
-            row_count=file.profile["row_count"],
-            column_count=file.profile["column_count"],
+            workspace_id=workspace_id,
+            processing_status="uploaded",
+            files=[
+                UploadedFile(
+                    filename=file.filename,
+                    row_count=file.profile["row_count"],
+                    column_count=file.profile["column_count"],
+                )
+                for file in processed_files
+            ],
         )

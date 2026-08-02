@@ -1,10 +1,15 @@
+from typing import Literal
+
 from pydantic import BaseModel
 
 
-class UploadResponse(BaseModel):
-    dataset_id: str
-    analysis_id: str
-    processing_status: str
+class UploadedFile(BaseModel):
     filename: str
     row_count: int
     column_count: int
+
+
+class UploadResponse(BaseModel):
+    workspace_id: str
+    processing_status: Literal["uploaded"]
+    files: list[UploadedFile]

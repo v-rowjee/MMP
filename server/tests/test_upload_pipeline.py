@@ -61,19 +61,27 @@ def file(data, name="sales.csv"):
     return UploadFile(BytesIO(data), filename=name)
 
 
-def upload(db, data=b"Order ID,Amount\n1,10\n2,20\n"):
-    return IngestionService(db, "upload", 1_000_000).upload_files("ws_12345678", [file(data)])
+def upload(db, *files):
+    if not files:
+        files = (file(b"Order ID,Amount\n1,10\n2,20\n"),)
+    elif len(files) == 1 and isinstance(files[0], bytes):
+        files = (file(files[0]),)
+    return IngestionService(db, "upload", 1_000_000).upload_files("ws_12345678", list(files))
 
 
-def test_upload_creates_profile_metadata_analysis_and_parquet():
+def test_upload_creates_profile_metadata_and_parquet():
     db = Database()
 
     response = upload(db)
 
     dataset = db.rows["datasets"][0]
-    assert response.processing_status == "dashboard_generating"
+    assert response.workspace_id == "ws_12345678"
+    assert response.processing_status == "uploaded"
+    assert [item.model_dump() for item in response.files] == [
+        {"filename": "sales.csv", "row_count": 2, "column_count": 2}
+    ]
     assert dataset["meta"]["profile"] == {"row_count": 2, "column_count": 2, "missing_values": 0}
-    assert db.rows["analysis_runs"][0]["dataset_id"] == response.dataset_id
+    assert "analysis_runs" not in db.rows
     parquet = pd.read_parquet(BytesIO(db.bucket.files[dataset["meta"]["parquet_path"]]))
     assert list(parquet.columns) == ["order_id", "amount"]
 
@@ -87,6 +95,29 @@ def test_rejects_invalid_files(data, name):
 def test_rejects_duplicate_normalised_columns():
     with pytest.raises(ValueError, match="Duplicate"):
         upload(Database(), b"Order ID,order-id\n1,2\n")
+
+
+def test_upload_accepts_multiple_files():
+    db = Database()
+
+    response = upload(
+        db,
+        file(b"Order ID,Amount\n1,10\n", "sales.csv"),
+        file(b"Customer,Spend\nAda,20\n", "customers.csv"),
+    )
+
+    assert response.workspace_id == "ws_12345678"
+    assert [item.filename for item in response.files] == ["sales.csv", "customers.csv"]
+    assert len(db.rows["datasets"]) == 2
+
+
+def test_rejects_files_with_duplicate_normalised_names():
+    with pytest.raises(ValueError, match="unique names"):
+        upload(
+            Database(),
+            file(b"a\n1\n", "sales-data.csv"),
+            file(b"a\n2\n", "sales data.csv"),
+        )
 
 
 def test_cleans_text_columns_without_removing_rows():

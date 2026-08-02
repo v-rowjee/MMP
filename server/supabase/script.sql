@@ -41,6 +41,83 @@ alter table public.datasets enable row level security;
 alter table public.dataset_fields enable row level security;
 alter table public.analysis_runs enable row level security;
 
+create policy "Users manage their workspace" on public.workspaces
+for all to authenticated
+using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
+
+create policy "Users manage their datasets" on public.datasets
+for all to authenticated
+using (
+    exists (
+        select 1 from public.workspaces
+        where workspaces.id = datasets.workspace_id
+        and workspaces.user_id = (select auth.uid())
+    )
+)
+with check (
+    exists (
+        select 1 from public.workspaces
+        where workspaces.id = datasets.workspace_id
+        and workspaces.user_id = (select auth.uid())
+    )
+);
+
+create policy "Users manage their dataset fields" on public.dataset_fields
+for all to authenticated
+using (
+    exists (
+        select 1 from public.datasets
+        join public.workspaces on workspaces.id = datasets.workspace_id
+        where datasets.id = dataset_fields.dataset_id
+        and workspaces.user_id = (select auth.uid())
+    )
+)
+with check (
+    exists (
+        select 1 from public.datasets
+        join public.workspaces on workspaces.id = datasets.workspace_id
+        where datasets.id = dataset_fields.dataset_id
+        and workspaces.user_id = (select auth.uid())
+    )
+);
+
+create policy "Users manage their analysis runs" on public.analysis_runs
+for all to authenticated
+using (
+    exists (
+        select 1 from public.workspaces
+        where workspaces.id = analysis_runs.workspace_id
+        and workspaces.user_id = (select auth.uid())
+    )
+)
+with check (
+    exists (
+        select 1 from public.workspaces
+        where workspaces.id = analysis_runs.workspace_id
+        and workspaces.user_id = (select auth.uid())
+    )
+);
+
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('upload', 'upload', false, 52428800, array['text/csv', 'application/vnd.apache.parquet'])
 on conflict (id) do update set public = false, file_size_limit = 52428800, allowed_mime_types = array['text/csv', 'application/vnd.apache.parquet'];
+
+create policy "Users manage their upload objects" on storage.objects
+for all to authenticated
+using (
+    bucket_id = 'upload'
+    and exists (
+        select 1 from public.workspaces
+        where workspaces.id = (storage.foldername(name))[1]
+        and workspaces.user_id = (select auth.uid())
+    )
+)
+with check (
+    bucket_id = 'upload'
+    and exists (
+        select 1 from public.workspaces
+        where workspaces.id = (storage.foldername(name))[1]
+        and workspaces.user_id = (select auth.uid())
+    )
+);

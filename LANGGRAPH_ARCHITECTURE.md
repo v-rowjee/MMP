@@ -1,133 +1,112 @@
-# Multi-Agent Data Analysis Platform
+# MMP Backend Architecture
 
-## 1. Project overview
+## 1. Current implementation
 
-This project is a web-based multi-agent data analysis platform for small and medium-sized businesses. Users upload business datasets and receive an automatically generated analytical dashboard. Once the dashboard is ready, users can ask questions about the dataset and the generated analysis through a grounded conversational interface.
+This repository is the backend for an analytics platform. It currently implements a deterministic upload pipeline and a synchronous dashboard-generation endpoint. The dashboard workflow is a LangGraph graph that returns a complete dashboard response in the same HTTP request.
 
-The system combines deterministic data processing with LangGraph-based workflows. Deterministic code handles file processing, calculations, validation, and persistence. Specialised agents interpret verified analytical results, generate insights, construct the dashboard, and answer user questions.
+Chat, dashboard retrieval, dashboard-status reads, durable analytical evidence, and deterministic dashboard calculations are not implemented yet. They are documented as next steps rather than current runtime behaviour.
 
-## 2. System flow
+## 2. Runtime flow
 
-The confirmed runtime order is:
+The implemented flow is:
 
 ```text
-Upload → Dashboard generation → Chat
+Upload dataset
+→ Process and persist the dataset
+→ Dataset status becomes ready
+→ POST /dashboard with a Bearer token
+→ Resolve the authenticated user's workspace
+→ Select its newest ready dataset
+→ Create an analysis run (dashboard_generating)
+→ Invoke the dashboard LangGraph synchronously
+→ Persist the chart layout and mark the run dashboard_ready
+→ Return the complete Dashboard response (HTTP 200)
 ```
 
 ```mermaid
 flowchart TD
-    A["User uploads files"] --> B["Validate and process data"]
-    B --> C["Persist dataset and metadata"]
-    C --> D["Run dashboard graph"]
-    D --> E["Persist dashboard analysis and evidence"]
-    E --> F["Display dashboard"]
-    F --> G["Enable chat"]
-    G --> H["Run chat graph for each question"]
+    A["User uploads files"] --> B["Validate, process and store dataset"]
+    B --> C["Dataset status: ready"]
+    C --> D["POST /dashboard with Bearer token"]
+    D --> E["Authenticate user and resolve workspace"]
+    E --> F["Create analysis run: dashboard_generating"]
+    F --> G["Invoke dashboard graph"]
+    G --> H["Persist chart layout and dashboard_ready status"]
+    H --> I["Return Dashboard JSON"]
 ```
 
-Chat becomes available only after the dashboard has been generated successfully. This ensures that chat can retrieve and explain dashboard outputs such as KPIs, trends, anomalies, forecasts, insights, and recommendations.
+`POST /dashboard` has no request body. It is synchronous: the caller waits for graph execution, persistence, and response construction. The API does not currently provide a status-polling endpoint or a working dashboard-read endpoint.
 
-## 3. Architecture
-
-The backend contains three main parts:
-
-1. A deterministic upload pipeline implemented with FastAPI services.
-2. A dashboard workflow implemented as a LangGraph graph.
-3. A chat workflow implemented as a separate LangGraph graph.
-
-Supabase provides authentication, relational persistence, and file storage. DuckDB queries processed datasets. Each LangGraph graph has its own typed, run-scoped state. Durable data is persisted in Supabase and shared between workflows through identifiers.
+## 3. Main components
 
 ```mermaid
 flowchart LR
-    A["Frontend"] --> B["FastAPI API"]
+    A["Frontend"] --> B["FastAPI"]
     B --> C["Upload service"]
-    B --> D["Dashboard graph"]
-    B --> E["Chat graph"]
-    C --> F["Supabase"]
-    D --> F
+    B --> D["Dashboard service"]
+    D --> E["Dashboard LangGraph"]
+    C --> F["Supabase storage and tables"]
     E --> F
-    D --> G["DuckDB and analysis models"]
-    E --> G
+    E --> G["Configured Ollama client"]
 ```
+
+- The upload service validates, normalises, profiles, converts, and stores uploaded tabular data.
+- The dashboard service selects a ready dataset, creates an analysis run, invokes the graph, and maps graph state to the public response schema.
+- The dashboard graph carries run-scoped state only.
+- Supabase persists workspaces, datasets, fields, analysis runs, and the generated chart layout.
+- The configured Ollama client provides structured outputs for the planner, analysis, insight, and layout nodes.
 
 ## 4. Upload pipeline
 
-The upload pipeline prepares data for dashboard generation.
+The upload route requires a Bearer token and resolves the workspace from the verified user. The ingestion service validates uploaded CSV or Parquet files, normalises the data, writes a processed Parquet file, profiles fields, and stores dataset and field metadata.
 
-```text
-Authenticate user
-→ Validate uploaded files
-→ Read and normalise data
-→ Convert data to Parquet
-→ Profile columns
-→ Create schema metadata
-→ Store files and metadata
-→ Return the workspace identifier
+After successful processing, the dataset status is `ready`. Dashboard generation only selects datasets with that status.
+
+## 5. Dashboard API request and response
+
+### Request
+
+```http
+POST /dashboard
+Authorization: Bearer <access-token>
 ```
 
-### Responsibilities
+The `workspace` dependency first validates the Bearer token with Supabase Auth. It then retrieves the user's workspace, creating one when none exists.
 
-- Verify user ownership and access.
-- Validate file type, size, structure, and required content.
-- Normalise column names and supported data types.
-- Preserve the original file and create a processed Parquet version.
-- Profile columns and record schema metadata.
-- Persist the dataset, file locations, and processing status.
-- Resolve the authenticated user's workspace from their verified JWT.
-- Remove incomplete records and files when processing fails.
+### Service flow
 
-The upload response returns uploaded file summaries and an `uploaded` status. Dataset and workspace identifiers remain internal. The frontend invokes dashboard generation with its Bearer token; the backend verifies the token and resolves the user's workspace.
+`DashboardService.generate_dashboard(workspace_id)` performs the following work:
 
-## 5. Dashboard LangGraph
+1. Select the workspace's most recently uploaded dataset with `status = ready`.
+2. Insert an `analysis_runs` record with its dataset and workspace identifiers and status `dashboard_generating`.
+3. Invoke the compiled dashboard graph with `analysis_id` and `dataset_id`.
+4. Build a `Dashboard` response from the final graph state and return it.
 
-The dashboard graph performs the initial analysis and produces the structured dashboard shown to the user.
+The selected analysis identifier is internal: it is not included in the current response schema.
 
-```mermaid
-flowchart TD
-    A["Load dataset context"] --> B["Plan analysis"]
-    B --> C["Calculate KPIs and trends"]
-    B --> D["Detect anomalies"]
-    B --> E["Generate forecasts"]
-    C --> F["Synthesise insights"]
-    D --> F
-    E --> F
-    F --> G["Build dashboard"]
-    G --> H["Validate output"]
-    H --> I["Persist dashboard and evidence"]
-```
+### Response
 
-### Nodes
+The successful response is HTTP 200 and conforms to the immutable `Dashboard` schema:
 
-1. `load_dataset_context`
-2. `plan_dashboard_analysis`
-3. `calculate_kpis_and_trends`
-4. `detect_anomalies`
-5. `generate_forecasts`
-6. `synthesise_insights`
-7. `build_dashboard`
-8. `validate_dashboard`
-9. `persist_dashboard`
+- `workspace_id` and `generated_at`
+- Dataset metadata and summary counts
+- KPIs and charts
+- Anomaly and forecast sections
+- Insights, recommendations, and warnings
 
-### Node responsibilities
+`generated_at` is produced while the response is built; it is not currently stored on the analysis run.
 
-| Operation | Implementation |
-|---|---|
-| Dataset and schema loading | Application service and Supabase |
-| Analysis planning | Dashboard graph node calling the planner agent with the LLM client and schema metadata |
-| KPI calculation | DuckDB or deterministic code |
-| Trend calculation | DuckDB or deterministic code |
-| Anomaly detection | Statistical or machine-learning model |
-| Forecasting | Forecasting model |
-| Insight synthesis | Dashboard graph node calling the insight agent with verified analytical outputs |
-| Dashboard construction | Dashboard graph node calling the dashboard agent with validated results |
-| Output validation | Deterministic schema and evidence checks |
-| Persistence | Supabase repository layer |
+### Current error behaviour
 
-All user-facing numerical claims must originate from executed queries or analytical models. Agents interpret results and select useful presentation structures without inventing figures.
+- Missing or invalid Bearer token: HTTP 401.
+- Expected `ValueError` from dashboard creation or graph validation: HTTP 422.
+- Other failures, including LLM, database, and response-construction failures: unhandled HTTP 500 responses.
 
-## 6. Dashboard state
+If dashboard graph construction or execution fails after the analysis run is created, the service changes the run to `failed` and records `failure_stage = dashboard_generation` with the exception message in `failure_diagnostic` before re-raising the error.
 
-The dashboard graph uses a typed state for one analysis run.
+## 6. Dashboard LangGraph
+
+The graph is compiled per service invocation. Its typed `DashboardState` carries only the fields for that one run:
 
 ```python
 class DashboardState(TypedDict):
@@ -145,237 +124,109 @@ class DashboardState(TypedDict):
     errors: list[str]
 ```
 
-Each node returns only the fields it updates. The state carries working data between nodes, while completed outputs are saved to Supabase.
-
-## 7. Persisted dashboard evidence
-
-The system persists both the dashboard configuration and the structured analysis behind it.
-
-```json
-{
-  "analysis_id": "...",
-  "dataset_id": "...",
-  "kpis": [],
-  "trends": [],
-  "anomalies": [],
-  "forecasts": [],
-  "insights": [],
-  "recommendations": [],
-  "dashboard": {},
-  "generated_at": "..."
-}
-```
-
-Each analytical result records its supporting evidence, including:
-
-- Relevant dataset and columns.
-- Metric and calculated values.
-- Time range and filters.
-- Query or calculation used.
-- Source node or analytical model.
-- References to related results.
-
-This structured evidence connects the dashboard graph to the chat graph and allows chat to explain existing findings without rerunning dashboard generation.
-
-## 8. Chat LangGraph
-
-The chat graph runs once for every user message. It retrieves existing dashboard evidence, executes a new dataset query, or combines both sources.
+The workflow is:
 
 ```mermaid
 flowchart TD
-    A["Receive question"] --> B["Load history and analysis context"]
-    B --> C["Classify question"]
-    C --> D["Retrieve dashboard evidence"]
-    C --> E["Plan dataset query"]
-    E --> F["Generate SQL"]
-    F --> G["Validate and execute SQL"]
-    D --> H["Compose grounded answer"]
-    G --> H
-    H --> I["Validate and persist response"]
+    A["load_dataset_context"] --> B["plan_dashboard_analysis"]
+    B --> C["calculate_kpis_and_trends"]
+    B --> D["detect_anomalies"]
+    B --> E["generate_forecasts"]
+    C --> F["synthesise_insights"]
+    D --> F
+    E --> F
+    F --> G["build_dashboard"]
+    G --> H["validate_dashboard"]
+    H --> I["persist_dashboard"]
 ```
 
-### Nodes
+### Node responsibilities
 
-1. `load_chat_context`
-2. `classify_question`
-3. `retrieve_dashboard_context`
-4. `plan_data_query`
-5. `generate_sql`
-6. `validate_sql`
-7. `execute_query`
-8. `compose_answer`
-9. `validate_answer`
-10. `persist_message`
-
-### Question routing
-
-| Question type | Graph action |
+| Node | Current responsibility |
 |---|---|
-| Existing KPI, trend, anomaly, forecast, or insight | Retrieve persisted dashboard evidence |
-| New calculation or raw-data question | Generate and execute a guarded DuckDB query |
-| Question combining existing analysis with new data | Retrieve dashboard evidence and query the dataset |
-| Follow-up about the conversation | Load relevant message history and prior evidence |
+| `load_dataset_context` | Verifies that the analysis belongs to the dataset, then loads dataset metadata and ordered field definitions from Supabase. |
+| `plan_dashboard_analysis` | Requests a structured field-selection plan from the configured LLM and rejects unknown fields. |
+| `calculate_kpis_and_trends` | Requests structured KPI and trend output from the LLM and validates trend field references. |
+| `detect_anomalies` | Requests structured anomaly output from the LLM and validates dataset and field references. |
+| `generate_forecasts` | Requests structured forecast output from the LLM and validates forecast targets. |
+| `synthesise_insights` | Requests insight and recommendation output from the LLM; evidence IDs must refer to state results. |
+| `build_dashboard` | Requests a chart layout from the LLM and validates dataset and field references. |
+| `validate_dashboard` | Validates the chart-layout schema, chart IDs, required values, and chart-series rules. |
+| `persist_dashboard` | Saves the validated chart layout and changes the analysis-run status to `dashboard_ready`. |
 
-Generated SQL must pass deterministic validation before execution. Answers must be based on retrieved dashboard evidence, executed query results, or both. When sufficient evidence is unavailable, the response records that the question could not be answered from the available data.
+The KPI/trend, anomaly, and forecast nodes are currently LLM-backed. They do not execute DuckDB queries, inspect the stored Parquet file, or invoke deterministic analytical or forecasting models. Their numeric values and SQL strings are therefore not independently verified by the backend.
 
-## 9. Chat state
+## 7. Persistence
 
-```python
-class ChatState(TypedDict):
-    analysis_id: str
-    dataset_id: str
-    session_id: str
-    question: str
-    history: list
-    schema: dict
-    dashboard_context: dict
-    route: str
-    query_plan: dict | None
-    sql: str | None
-    query_result: list
-    answer: str
-    errors: list[str]
+The relevant persisted records are:
+
+- `datasets`: uploaded dataset metadata, its `ready`/`failed` status, and processing metadata.
+- `dataset_fields`: each dataset's normalised fields, types, roles, and profiles.
+- `analysis_runs`: the selected dataset and workspace, status, creation time, and chart layout.
+
+For a successful dashboard run, the implementation persists this effective shape in `analysis_runs`:
+
+```json
+{
+  "id": "...",
+  "dataset_id": "...",
+  "workspace_id": "...",
+  "status": "dashboard_ready",
+  "dashboard": {
+    "charts": []
+  },
+  "failure_stage": null,
+  "failure_diagnostic": null,
+  "created_at": "..."
+}
 ```
 
-The state exists for one message execution. Conversation history, dashboard evidence, and messages remain durable records in Supabase.
+Only the `dashboard` layout is written by the graph. On graph failure, the status, failure stage, and failure diagnostic are also persisted. KPIs, trends, anomalies, forecasts, insights, recommendations, evidence IDs, warnings, and the public response timestamp are not currently persisted.
 
-## 10. SQL execution and safety
+Row-level-security policies exist for workspaces, datasets, dataset fields, and analysis runs. At the API boundary, dashboard generation is scoped to the workspace derived from the authenticated user rather than a workspace identifier supplied by the client.
 
-DuckDB provides analytical access to processed Parquet files. Generated SQL is executed only after validation.
+## 8. Available and unavailable endpoints
 
-The SQL guard enforces:
+| Endpoint | Status | Behaviour |
+|---|---|---|
+| `POST /upload` | Implemented | Authenticates, processes uploads, and stores ready datasets. |
+| `POST /dashboard` | Implemented | Generates a dashboard synchronously for the authenticated user's newest ready dataset. |
+| `GET /dashboard/{workspace_id}` | Placeholder | Declared but raises `NotImplementedError`; it is not an authorised dashboard retrieval flow. |
+| `POST /chat` | Placeholder | Returns a fixed “Not implemented yet.” response. |
 
-- One statement per request.
-- Read-only `SELECT` or `WITH` queries.
-- Access only to registered dataset views.
-- Use only of known columns.
-- Rejection of file-reading functions, DDL, and DML.
-- Required row limits for result-producing queries.
-- Successful parsing and dry-run validation.
+There is no analysis-status endpoint, dashboard-regeneration endpoint, dataset-replacement endpoint, or persisted-dashboard read endpoint in the current implementation.
 
-The query result, executed SQL, row count, and validation status are retained as answer evidence.
+## 9. Frontend integration
 
-## 11. Persistence model
+The frontend should currently:
 
-Supabase is the durable source of truth for:
+1. Authenticate the user.
+2. Upload a supported dataset and wait for upload success.
+3. Call `POST /dashboard` with the Bearer token.
+4. Wait for the synchronous response.
+5. Render the returned `Dashboard` object directly.
 
-- User profiles and ownership.
-- Datasets and stored file locations.
-- Dataset columns and schema metadata.
-- Analysis runs and workflow statuses.
-- KPIs, trends, anomalies, forecasts, insights, and recommendations.
-- Dashboard configuration.
-- Chat sessions and messages.
-- Query and evidence references used in generated answers.
+It must not currently poll an analysis status endpoint, expect `analysis_id` in the response, or fetch the dashboard later through `GET /dashboard/{workspace_id}`.
 
-Every user-owned record is protected through authentication, ownership checks, and row-level security.
+## 10. Verification
 
-### Analysis lifecycle
+Focused coverage currently verifies:
 
-```text
-uploaded
-→ processing
-→ dashboard_generating
-→ dashboard_ready
-```
+- Bearer-token enforcement and workspace resolution for dashboard generation.
+- Dashboard-service request-to-graph input mapping and response-schema construction.
+- Failure-status persistence when dashboard graph execution raises.
+- Full graph routing and persistence of the chart layout/status.
+- Structured LLM output validation at the client and graph-agent boundaries.
+- Dashboard layout validation rules.
 
-A failed upload or dashboard run transitions to `failed` with a stored failure stage and basic diagnostic information. Chat is enabled only for an analysis with the `dashboard_ready` status.
+## 11. Pending architecture work
 
-## 12. API responsibilities
+The following documented capabilities are not part of the current runtime flow:
 
-The FastAPI layer exposes the workflows to the frontend.
+1. Deterministic KPI, trend, anomaly, and forecast calculations over the processed Parquet data.
+2. Validation that chart and KPI SQL has executed successfully against the selected dataset.
+3. Durable persistence of complete analytical outputs and their supporting evidence.
+4. Authorised analysis-status and dashboard-read endpoints.
+5. A separate `ChatState` LangGraph workflow that reads persisted dashboard evidence and executes guarded dataset queries.
 
-| Endpoint responsibility | Behaviour |
-|---|---|
-| Upload dataset | Validate and persist files in the authenticated user's workspace |
-| Read analysis status | Return the current upload or dashboard status |
-| Read dashboard | Return the persisted dashboard for an authorised user |
-| Send chat message | Invoke the chat graph and return its grounded answer |
-| Read chat history | Return messages for an authorised session |
-| Regenerate dashboard | Create a new analysis run for the selected dataset |
-| Replace dataset | Process the replacement and generate a new dashboard |
-
-## 13. Frontend flow
-
-1. The user signs in.
-2. The user uploads one or more supported files.
-3. The interface calls dashboard generation with the user's Bearer token.
-4. The interface displays dashboard-generation status.
-5. The completed dashboard is loaded from persisted results.
-6. Chat becomes available.
-7. Each question invokes the chat graph.
-8. The answer may reference dashboard findings, new dataset calculations, or both.
-
-## 14. Validation and testing
-
-Each part is tested independently and through the complete runtime flow.
-
-### Upload pipeline
-
-- File validation and normalisation.
-- Type inference and schema profiling.
-- Parquet generation.
-- Metadata and ownership persistence.
-- Cleanup after partial failure.
-
-### Dashboard graph
-
-- Node input and output schemas.
-- KPI and trend calculation accuracy.
-- Anomaly and forecast output contracts.
-- Insight grounding against analytical evidence.
-- Dashboard schema validation.
-- Workflow status transitions and persistence.
-
-### Chat graph
-
-- Question routing.
-- Dashboard evidence retrieval.
-- SQL guard acceptance and rejection cases.
-- Query execution accuracy.
-- Answer grounding and evidence references.
-- Conversation persistence and ownership isolation.
-
-### End-to-end flow
-
-```text
-Upload a dataset
-→ Wait for dashboard_ready
-→ Load the dashboard
-→ Ask about a generated insight
-→ Ask for a new calculation
-→ Verify both answers against stored evidence
-```
-
-## 15. Implementation order
-
-1. Define the database schema, storage structure, and workflow statuses.
-2. Implement authentication, ownership checks, and row-level security.
-3. Implement the complete upload pipeline.
-4. Define `DashboardState` and construct the dashboard graph.
-5. Implement deterministic KPI, trend, anomaly, and forecasting nodes.
-6. Implement insight synthesis, dashboard construction, validation, and persistence.
-7. Connect the frontend to dashboard status and persisted dashboard results.
-8. Define `ChatState` and construct the chat graph.
-9. Implement dashboard-context retrieval and guarded DuckDB queries.
-10. Implement grounded answer generation, validation, and message persistence.
-11. Add dataset replacement, dashboard regeneration, and workflow retry behaviour.
-12. Complete type checking, unit tests, integration tests, and end-to-end validation.
-
-## 16. Final project structure
-
-```text
-Frontend
-   ↓
-FastAPI upload and API services
-   ↓
-Dashboard LangGraph
-   ↓
-Supabase structured analysis and dashboard
-   ↓
-Chat LangGraph
-   ↓
-Grounded answers from dashboard evidence and dataset queries
-```
-
-The project uses focused LangGraph workflows for agentic analysis and conversation, deterministic services for data processing and verification, and Supabase as the persistent connection between every stage.
+These changes should be designed together before changing the endpoint contract or enabling chat.

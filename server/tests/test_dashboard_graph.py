@@ -4,7 +4,6 @@ import pytest
 
 from app.graph.dashboard import DashboardWorkflow, build_dashboard_graph
 from app import agents as dashboard_agents
-from app.llm.client import OllamaError
 from app.services.dashboard.repository import DashboardRepository
 from app.services.dashboard.validation import DashboardValidationService
 
@@ -70,7 +69,7 @@ class TestLLM:
         try:
             return response_model.model_validate_json(self.response(prompt_name))
         except ValueError as error:
-            raise OllamaError(f"prompt={prompt_name!r}: {error}") from error
+            raise RuntimeError(f"prompt={prompt_name!r}: {error}") from error
 
 
 class Planner(TestLLM):
@@ -175,7 +174,7 @@ def test_plan_rejects_unknown_fields():
 
 
 def test_plan_rejects_invalid_model_response():
-    with pytest.raises(OllamaError, match="Invalid JSON"):
+    with pytest.raises(RuntimeError, match="Invalid JSON"):
         dashboard_agents.plan_dashboard_analysis(
             InvalidPlanner(),
             {"fields": [{"name": "amount"}]}
@@ -188,7 +187,7 @@ class InvalidTrendPlanner(TestLLM):
 
 
 def test_kpi_and_trend_analysis_rejects_invalid_model_response():
-    with pytest.raises(OllamaError, match="Invalid JSON"):
+    with pytest.raises(RuntimeError, match="Invalid JSON"):
         dashboard_agents.calculate_kpis_and_trends(
             InvalidTrendPlanner(),
             {"fields": [{"name": "amount"}]},
@@ -202,7 +201,7 @@ class InvalidAnomalyPlanner(TestLLM):
 
 
 def test_anomaly_analysis_rejects_invalid_model_response():
-    with pytest.raises(OllamaError, match="Invalid JSON"):
+    with pytest.raises(RuntimeError, match="Invalid JSON"):
         dashboard_agents.detect_anomalies(
             InvalidAnomalyPlanner(),
             {"fields": [{"name": "amount"}]},
@@ -216,7 +215,7 @@ class InvalidForecastPlanner(TestLLM):
 
 
 def test_forecast_analysis_rejects_invalid_model_response():
-    with pytest.raises(OllamaError, match="Invalid JSON"):
+    with pytest.raises(RuntimeError, match="Invalid JSON"):
         dashboard_agents.generate_forecasts(
             InvalidForecastPlanner(),
             {"fields": [{"name": "amount"}]},
@@ -230,7 +229,7 @@ class InvalidInsightPlanner(TestLLM):
 
 
 def test_insight_synthesis_rejects_invalid_model_response():
-    with pytest.raises(OllamaError, match="Invalid JSON"):
+    with pytest.raises(RuntimeError, match="Invalid JSON"):
         dashboard_agents.synthesise_insights(
             InvalidInsightPlanner(),
             [], [], [], []
@@ -243,7 +242,7 @@ class InvalidDashboardPlanner(TestLLM):
 
 
 def test_dashboard_layout_rejects_invalid_model_response():
-    with pytest.raises(OllamaError, match="Invalid JSON"):
+    with pytest.raises(RuntimeError, match="Invalid JSON"):
         dashboard_agents.build_dashboard(
             InvalidDashboardPlanner(),
             {"fields": [{"name": "amount"}]},
@@ -316,3 +315,16 @@ def test_persist_dashboard_rejects_mismatched_dataset():
         DashboardRepository(Database()).persist_dashboard(
             "analysis_123", "dataset_456", {"charts": []}
         )
+
+
+def test_mark_analysis_failed_saves_stage_and_diagnostic():
+    db = Database()
+
+    DashboardRepository(db).mark_analysis_failed(
+        "analysis_123", "dashboard_generation", "dashboard model is unavailable"
+    )
+
+    analysis = db.rows["analysis_runs"][0]
+    assert analysis["status"] == "failed"
+    assert analysis["failure_stage"] == "dashboard_generation"
+    assert analysis["failure_diagnostic"] == "dashboard model is unavailable"

@@ -28,12 +28,18 @@ class DashboardService:
         from app.graph.dashboard import build_dashboard_graph
 
         analysis = self.repository.create_analysis_for_workspace(workspace_id)
-        state = build_dashboard_graph(self.db, self.llm).invoke(
-            {
-                "analysis_id": analysis["id"],
-                "dataset_id": analysis["dataset_id"],
-            }
-        )
+        try:
+            state = build_dashboard_graph(self.db, self.llm).invoke(
+                {
+                    "analysis_id": analysis["id"],
+                    "dataset_id": analysis["dataset_id"],
+                }
+            )
+        except Exception as error:
+            self.repository.mark_analysis_failed(
+                analysis["id"], "dashboard_generation", str(error)
+            )
+            raise
         return self._build_response(workspace_id, state)
 
     def _build_response(self, workspace_id: str, state: dict[str, Any]) -> Dashboard:

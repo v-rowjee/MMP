@@ -107,3 +107,25 @@ class DashboardRepository:
             )
         except Exception as error:
             raise RuntimeError("Dashboard persistence failed") from error
+
+    def mark_analysis_failed(
+        self,
+        analysis_id: str,
+        failure_stage: str,
+        failure_diagnostic: str,
+    ) -> None:
+        try:
+            (
+                self.db.table("analysis_runs")
+                .update(
+                    {
+                        "status": "failed",
+                        "failure_stage": failure_stage,
+                        "failure_diagnostic": failure_diagnostic,
+                    }
+                )
+                .eq("id", analysis_id)
+                .execute()
+            )
+        except Exception as error:
+            raise RuntimeError("Dashboard failure persistence failed") from error

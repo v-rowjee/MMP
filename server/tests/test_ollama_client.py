@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from app.llm.client import OllamaClient, OllamaError
+from app.llm.client import OllamaClient
 from app.schemas.dashboard import DashboardAnalysisPlan
 
 
@@ -79,7 +79,7 @@ def test_returns_one_error_for_ollama_failures(monkeypatch):
     monkeypatch.setattr("app.llm.client.urlopen", fake_urlopen)
     client = OllamaClient()
 
-    with pytest.raises(OllamaError, match="agent='dashboard'"):
+    with pytest.raises(RuntimeError, match="agent='dashboard'"):
         client.generate("dashboard", "dashboard_planner", {}, DashboardAnalysisPlan)
 
 

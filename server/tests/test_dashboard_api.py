@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+import pytest
 
 from app.api.dashboard import router
 from app.deps import workspace
@@ -129,3 +130,42 @@ def test_dashboard_service_returns_dashboard_schema(monkeypatch):
     assert response.summary.numeric_columns == 1
     assert response.summary.text_columns == 1
     assert response.forecast.available is False
+
+
+def test_dashboard_service_marks_the_analysis_failed_when_the_graph_raises(monkeypatch):
+    failure: dict[str, str] = {}
+
+    class Repository:
+        def __init__(self, _):
+            pass
+
+        def create_analysis_for_workspace(self, workspace_id):
+            assert workspace_id == "ws_12345678"
+            return {"id": "analysis_123", "dataset_id": "dataset_123"}
+
+        def mark_analysis_failed(self, analysis_id, stage, diagnostic):
+            failure.update(
+                analysis_id=analysis_id,
+                stage=stage,
+                diagnostic=diagnostic,
+            )
+
+    class Graph:
+        def invoke(self, _):
+            raise RuntimeError("dashboard model is unavailable")
+
+    monkeypatch.setattr(dashboard_service, "DashboardRepository", Repository)
+    monkeypatch.setattr(
+        "app.graph.dashboard.build_dashboard_graph", lambda *_: Graph()
+    )
+
+    with pytest.raises(RuntimeError, match="dashboard model is unavailable"):
+        dashboard_service.DashboardService(
+            SimpleNamespace(), SimpleNamespace()
+        ).generate_dashboard("ws_12345678")
+
+    assert failure == {
+        "analysis_id": "analysis_123",
+        "stage": "dashboard_generation",
+        "diagnostic": "dashboard model is unavailable",
+    }

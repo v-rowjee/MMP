@@ -35,6 +35,8 @@ create table public.analysis_runs (
     workspace_id uuid not null references public.workspaces(id) on delete cascade,
     status text not null check (status in ('dashboard_generating', 'dashboard_ready', 'failed')),
     dashboard jsonb not null default '{}'::jsonb,
+    failure_stage text,
+    failure_diagnostic text,
     created_at timestamptz not null default now()
 );
 

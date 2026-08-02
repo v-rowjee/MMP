@@ -79,6 +79,71 @@ def test_generate_dashboard_rejects_a_missing_bearer_token():
     assert response.status_code == 401
 
 
+def test_get_dashboard_uses_the_workspace_resolved_from_the_jwt(monkeypatch):
+    app = FastAPI()
+    app.state.db = SimpleNamespace()
+    app.include_router(router)
+    app.dependency_overrides[workspace] = lambda: "ws_12345678"
+    expected = dashboard()
+
+    class DashboardService:
+        def __init__(self, db):
+            assert db is app.state.db
+
+        def get_dashboard(self, workspace_id):
+            assert workspace_id == "ws_12345678"
+            return expected
+
+    monkeypatch.setattr("app.api.dashboard.DashboardService", DashboardService)
+
+    response = TestClient(app).get("/dashboard")
+
+    assert response.status_code == 200
+    assert response.json()["workspace_id"] == "ws_12345678"
+
+
+def test_get_dashboard_rejects_a_missing_bearer_token():
+    app = FastAPI()
+    app.state.db = SimpleNamespace()
+    app.include_router(router)
+
+    response = TestClient(app).get("/dashboard")
+
+    assert response.status_code == 401
+
+
+def test_dashboard_routes_reject_an_invalid_bearer_token():
+    app = FastAPI()
+    app.state.db = SimpleNamespace(
+        auth=SimpleNamespace(get_user=lambda _: (_ for _ in ()).throw(ValueError()))
+    )
+    app.include_router(router)
+
+    response = TestClient(app).post(
+        "/dashboard", headers={"Authorization": "Bearer invalid-token"}
+    )
+
+    assert response.status_code == 401
+
+
+def test_dashboard_routes_publish_the_supabase_bearer_scheme():
+    app = FastAPI()
+    app.include_router(router)
+
+    schema = app.openapi()
+
+    assert schema["components"]["securitySchemes"]["SupabaseBearer"] == {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Enter a Supabase user access token.",
+    }
+    for operation in ("post", "get"):
+        assert schema["paths"]["/dashboard"][operation]["security"] == [
+            {"SupabaseBearer": []}
+        ]
+
+
 def test_dashboard_service_returns_dashboard_schema(monkeypatch):
     uploaded_at = datetime.now(timezone.utc)
     state = {
@@ -169,3 +234,65 @@ def test_dashboard_service_marks_the_analysis_failed_when_the_graph_raises(monke
         "stage": "dashboard_generation",
         "diagnostic": "dashboard model is unavailable",
     }
+
+
+def test_dashboard_service_returns_the_persisted_dashboard(monkeypatch):
+    generated_at = datetime.now(timezone.utc)
+    stored_dashboard = {
+        "generated_at": generated_at.isoformat(),
+        "kpis": [
+            {
+                "name": "Amount",
+                "value": 30.0,
+                "unit": None,
+                "period": None,
+                "delta_pct": None,
+                "trend": "unknown",
+                "sql": "SELECT SUM(amount) FROM sales",
+            }
+        ],
+        "charts": [],
+        "anomalies": [],
+        "forecasts": [],
+        "insights": [],
+        "recommendations": [],
+        "warnings": [],
+    }
+    schema = {
+        "dataset": {
+            "name": "sales",
+            "source_filename": "sales.csv",
+            "row_count": 2,
+            "profile": {"column_count": 2, "missing_values": 0},
+            "uploaded_at": generated_at,
+        },
+        "fields": [
+            {"name": "amount", "dtype": "Int64", "role": "measure"},
+            {"name": "customer", "dtype": "String", "role": "dimension"},
+        ],
+    }
+
+    class Repository:
+        def __init__(self, _):
+            pass
+
+        def load_latest_dashboard(self, workspace_id):
+            assert workspace_id == "ws_12345678"
+            return {
+                "id": "analysis_123",
+                "dataset_id": "dataset_123",
+                "dashboard": stored_dashboard,
+            }
+
+        def load_dataset_context(self, analysis_id, dataset_id):
+            assert (analysis_id, dataset_id) == ("analysis_123", "dataset_123")
+            return schema
+
+    monkeypatch.setattr(dashboard_service, "DashboardRepository", Repository)
+
+    response = dashboard_service.DashboardService(
+        SimpleNamespace(), SimpleNamespace()
+    ).get_dashboard("ws_12345678")
+
+    assert response.generated_at == generated_at
+    assert response.kpis[0].value == 30.0

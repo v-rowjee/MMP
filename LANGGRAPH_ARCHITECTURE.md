@@ -4,7 +4,7 @@
 
 This repository is the backend for an analytics platform. It currently implements a deterministic upload pipeline and a synchronous dashboard-generation endpoint. The dashboard workflow is a LangGraph graph that returns a complete dashboard response in the same HTTP request.
 
-Chat, dashboard retrieval, dashboard-status reads, durable analytical evidence, and deterministic dashboard calculations are not implemented yet. They are documented as next steps rather than current runtime behaviour.
+Chat, dashboard-status reads, and deterministic dashboard calculations are not implemented yet. The dashboard result is persisted for authenticated retrieval, but it does not yet provide the verified analytical evidence required for chat.
 
 ## 2. Runtime flow
 
@@ -19,7 +19,7 @@ Upload dataset
 → Select its newest ready dataset
 → Create an analysis run (dashboard_generating)
 → Invoke the dashboard LangGraph synchronously
-→ Persist the chart layout and mark the run dashboard_ready
+→ Persist the complete dashboard result and mark the run dashboard_ready
 → Return the complete Dashboard response (HTTP 200)
 ```
 
@@ -31,11 +31,11 @@ flowchart TD
     D --> E["Authenticate user and resolve workspace"]
     E --> F["Create analysis run: dashboard_generating"]
     F --> G["Invoke dashboard graph"]
-    G --> H["Persist chart layout and dashboard_ready status"]
+    G --> H["Persist complete dashboard result and dashboard_ready status"]
     H --> I["Return Dashboard JSON"]
 ```
 
-`POST /dashboard` has no request body. It is synchronous: the caller waits for graph execution, persistence, and response construction. The API does not currently provide a status-polling endpoint or a working dashboard-read endpoint.
+`POST /dashboard` has no request body. It is synchronous: the caller waits for graph execution, persistence, and response construction. `GET /dashboard` retrieves the authenticated user's latest complete, ready dashboard. The API does not currently provide a status-polling endpoint.
 
 ## 3. Main components
 
@@ -94,7 +94,7 @@ The successful response is HTTP 200 and conforms to the immutable `Dashboard` sc
 - Anomaly and forecast sections
 - Insights, recommendations, and warnings
 
-`generated_at` is produced while the response is built; it is not currently stored on the analysis run.
+`generated_at` is created when the graph persists the dashboard and is returned unchanged by subsequent dashboard reads.
 
 ### Current error behaviour
 
@@ -152,7 +152,7 @@ flowchart TD
 | `synthesise_insights` | Requests insight and recommendation output from the LLM; evidence IDs must refer to state results. |
 | `build_dashboard` | Requests a chart layout from the LLM and validates dataset and field references. |
 | `validate_dashboard` | Validates the chart-layout schema, chart IDs, required values, and chart-series rules. |
-| `persist_dashboard` | Saves the validated chart layout and changes the analysis-run status to `dashboard_ready`. |
+| `persist_dashboard` | Saves the complete dashboard result and changes the analysis-run status to `dashboard_ready`. |
 
 The KPI/trend, anomaly, and forecast nodes are currently LLM-backed. They do not execute DuckDB queries, inspect the stored Parquet file, or invoke deterministic analytical or forecasting models. Their numeric values and SQL strings are therefore not independently verified by the backend.
 
@@ -181,7 +181,7 @@ For a successful dashboard run, the implementation persists this effective shape
 }
 ```
 
-Only the `dashboard` layout is written by the graph. On graph failure, the status, failure stage, and failure diagnostic are also persisted. KPIs, trends, anomalies, forecasts, insights, recommendations, evidence IDs, warnings, and the public response timestamp are not currently persisted.
+The graph persists the chart layout, KPIs, trends, anomalies, forecasts, insights, recommendations, warnings, and generation timestamp together in `dashboard`. On graph failure, the status, failure stage, and failure diagnostic are persisted instead.
 
 Row-level-security policies exist for workspaces, datasets, dataset fields, and analysis runs. At the API boundary, dashboard generation is scoped to the workspace derived from the authenticated user rather than a workspace identifier supplied by the client.
 
@@ -191,10 +191,10 @@ Row-level-security policies exist for workspaces, datasets, dataset fields, and 
 |---|---|---|
 | `POST /upload` | Implemented | Authenticates, processes uploads, and stores ready datasets. |
 | `POST /dashboard` | Implemented | Generates a dashboard synchronously for the authenticated user's newest ready dataset. |
-| `GET /dashboard/{workspace_id}` | Placeholder | Declared but raises `NotImplementedError`; it is not an authorised dashboard retrieval flow. |
+| `GET /dashboard` | Implemented | Returns the authenticated user's latest complete `dashboard_ready` result. It returns 404 when no ready result exists or an older chart-only result cannot be reconstructed safely. |
 | `POST /chat` | Placeholder | Returns a fixed “Not implemented yet.” response. |
 
-There is no analysis-status endpoint, dashboard-regeneration endpoint, dataset-replacement endpoint, or persisted-dashboard read endpoint in the current implementation.
+There is no analysis-status endpoint, dashboard-regeneration endpoint, or dataset-replacement endpoint in the current implementation.
 
 ## 9. Frontend integration
 
@@ -204,16 +204,16 @@ The frontend should currently:
 2. Upload a supported dataset and wait for upload success.
 3. Call `POST /dashboard` with the Bearer token.
 4. Wait for the synchronous response.
-5. Render the returned `Dashboard` object directly.
+5. Render the returned `Dashboard` object directly, or reload it later through authenticated `GET /dashboard`.
 
-It must not currently poll an analysis status endpoint, expect `analysis_id` in the response, or fetch the dashboard later through `GET /dashboard/{workspace_id}`.
+It must not currently poll an analysis status endpoint or expect `analysis_id` in the response.
 
 ## 10. Verification
 
 Focused coverage currently verifies:
 
 - Bearer-token enforcement and workspace resolution for dashboard generation.
-- Dashboard-service request-to-graph input mapping and response-schema construction.
+- Dashboard-service request-to-graph input mapping, response-schema construction, and persisted-dashboard reconstruction.
 - Failure-status persistence when dashboard graph execution raises.
 - Full graph routing and persistence of the chart layout/status.
 - Structured LLM output validation at the client and graph-agent boundaries.
@@ -225,8 +225,7 @@ The following documented capabilities are not part of the current runtime flow:
 
 1. Deterministic KPI, trend, anomaly, and forecast calculations over the processed Parquet data.
 2. Validation that chart and KPI SQL has executed successfully against the selected dataset.
-3. Durable persistence of complete analytical outputs and their supporting evidence.
-4. Authorised analysis-status and dashboard-read endpoints.
-5. A separate `ChatState` LangGraph workflow that reads persisted dashboard evidence and executes guarded dataset queries.
+3. Authorised analysis-status endpoints.
+4. A separate `ChatState` LangGraph workflow that reads persisted dashboard evidence and executes guarded dataset queries.
 
 These changes should be designed together before changing the endpoint contract or enabling chat.

@@ -146,3 +146,14 @@ def test_unauthenticated_upload_is_rejected():
     app.include_router(router)
 
     assert TestClient(app).post("/upload", files={"files": ("sales.csv", b"a\n1\n", "text/csv")}).status_code == 401
+
+
+def test_upload_route_references_the_supabase_bearer_scheme():
+    app = FastAPI()
+    app.include_router(router)
+
+    schema = app.openapi()
+
+    assert schema["paths"]["/upload"]["post"]["security"] == [
+        {"SupabaseBearer": []}
+    ]

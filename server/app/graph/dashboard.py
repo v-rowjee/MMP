@@ -1,5 +1,6 @@
 """Dashboard LangGraph workflow skeleton."""
 
+from datetime import datetime, timezone
 from typing import Any, Required, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -29,6 +30,7 @@ class DashboardState(TypedDict, total=False):
     recommendations: list[dict[str, Any]]
     dashboard: dict[str, Any]
     errors: list[str]
+    generated_at: str
 
 
 class DashboardWorkflow:
@@ -134,12 +136,24 @@ class DashboardWorkflow:
     def persist_dashboard(self, state: DashboardState) -> dict[str, Any]:
         if self.validation.validate(state.get("dashboard", {})):
             raise ValueError("Dashboard validation failed")
+        generated_at = datetime.now(timezone.utc).isoformat()
+        dashboard = {
+            **state.get("dashboard", {}),
+            "generated_at": generated_at,
+            "kpis": state.get("kpis", []),
+            "trends": state.get("trends", []),
+            "anomalies": state.get("anomalies", []),
+            "forecasts": state.get("forecasts", []),
+            "insights": state.get("insights", []),
+            "recommendations": state.get("recommendations", []),
+            "warnings": state.get("errors", []),
+        }
         self.repository.persist_dashboard(
             state["analysis_id"],
             state["dataset_id"],
-            state.get("dashboard", {}),
+            dashboard,
         )
-        return {}
+        return {"dashboard": dashboard, "generated_at": generated_at}
 
 
 def build_dashboard_graph(db: Any, llm: Any | None = None):

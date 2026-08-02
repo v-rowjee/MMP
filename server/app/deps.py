@@ -1,16 +1,29 @@
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException, Request
+from fastapi import Depends, HTTPException, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+
+supabase_bearer = HTTPBearer(
+    scheme_name="SupabaseBearer",
+    bearerFormat="JWT",
+    description="Enter a Supabase user access token.",
+    auto_error=False,
+)
 
 
 def current_user_id(
     request: Request,
-    authorization: Annotated[str | None, Header()] = None,
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(supabase_bearer)
+    ],
 ) -> str:
-    if not authorization or not authorization.startswith("Bearer "):
+    if not credentials:
         raise HTTPException(401, "Missing bearer token")
+    if credentials.scheme.lower() != "bearer":
+        raise HTTPException(401, "Invalid bearer token")
     try:
-        user = request.app.state.db.auth.get_user(authorization[7:]).user
+        user = request.app.state.db.auth.get_user(credentials.credentials).user
         if not user:
             raise ValueError("User not found")
         return user.id
@@ -23,14 +36,14 @@ def workspace(
     user_id: Annotated[str, Depends(current_user_id)],
 ) -> str:
     db = request.app.state.db
-    row = (
+    response = (
         db.table("workspaces")
         .select("id")
         .eq("user_id", user_id)
         .maybe_single()
         .execute()
-        .data
     )
+    row = response.data if response else None
     if row:
         return row["id"]
 

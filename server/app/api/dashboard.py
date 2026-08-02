@@ -23,15 +23,12 @@ async def generate_dashboard(
         raise HTTPException(status_code=422, detail=str(error)) from error
 
 
-@router.get(
-    "/dashboard/{workspace_id}",
-    response_model=Dashboard,
-)
+@router.get("/dashboard", response_model=Dashboard)
 async def get_dashboard(
-    workspace_id: str,
+    request: Request,
+    workspace_id: str = Depends(workspace),
 ) -> Dashboard:
-    """
-    Retrieve an existing dashboard.
-    """
-
-    raise NotImplementedError
+    try:
+        return DashboardService(request.app.state.db).get_dashboard(workspace_id)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error

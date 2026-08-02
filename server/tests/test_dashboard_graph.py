@@ -136,7 +136,8 @@ def test_dashboard_graph_delegates_to_planner_agent(monkeypatch):
 
 
 def test_dashboard_graph_runs_full_skeleton_flow():
-    result = build_dashboard_graph(Database(), Planner()).invoke(
+    db = Database()
+    result = build_dashboard_graph(db, Planner()).invoke(
         {
             "analysis_id": "analysis_123",
             "dataset_id": "dataset_123",
@@ -156,6 +157,9 @@ def test_dashboard_graph_runs_full_skeleton_flow():
     assert result["recommendations"][0]["evidence"] == ["anomalies[0]"]
     assert result["dashboard"]["charts"][0]["id"] == "amount_over_time"
     assert result["errors"] == []
+    assert result["dashboard"]["kpis"] == result["kpis"]
+    assert result["dashboard"]["generated_at"] == result["generated_at"]
+    assert db.rows["analysis_runs"][0]["dashboard"] == result["dashboard"]
 
 
 def test_load_dataset_context_rejects_mismatched_analysis_run():

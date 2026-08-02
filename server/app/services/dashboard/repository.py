@@ -81,6 +81,37 @@ class DashboardRepository:
             raise RuntimeError("Dashboard analysis creation failed")
         return analysis[0] if isinstance(analysis, list) else analysis
 
+    def load_latest_dashboard(self, workspace_id: str) -> dict[str, Any]:
+        analyses = (
+            self.db.table("analysis_runs")
+            .select("id, dataset_id, dashboard")
+            .eq("workspace_id", workspace_id)
+            .eq("status", "dashboard_ready")
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        if not analyses:
+            raise ValueError("No ready dashboard found for workspace")
+
+        analysis = analyses[0]
+        dashboard = analysis["dashboard"]
+        required_fields = {
+            "generated_at",
+            "kpis",
+            "charts",
+            "anomalies",
+            "forecasts",
+            "insights",
+            "recommendations",
+            "warnings",
+        }
+        if not isinstance(dashboard, dict) or required_fields - dashboard.keys():
+            raise ValueError("Dashboard results are unavailable; regenerate dashboard")
+        return analysis
+
     def persist_dashboard(
         self,
         analysis_id: str,

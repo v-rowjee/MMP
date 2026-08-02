@@ -42,6 +42,24 @@ class DashboardService:
             raise
         return self._build_response(workspace_id, state)
 
+    def get_dashboard(self, workspace_id: str) -> Dashboard:
+        analysis = self.repository.load_latest_dashboard(workspace_id)
+        stored_dashboard = analysis["dashboard"]
+        state = {
+            "schema": self.repository.load_dataset_context(
+                analysis["id"], analysis["dataset_id"]
+            ),
+            "generated_at": stored_dashboard["generated_at"],
+            "kpis": stored_dashboard["kpis"],
+            "anomalies": stored_dashboard["anomalies"],
+            "forecasts": stored_dashboard["forecasts"],
+            "insights": stored_dashboard["insights"],
+            "recommendations": stored_dashboard["recommendations"],
+            "dashboard": stored_dashboard,
+            "errors": stored_dashboard["warnings"],
+        }
+        return self._build_response(workspace_id, state)
+
     def _build_response(self, workspace_id: str, state: dict[str, Any]) -> Dashboard:
         schema = state["schema"]
         dataset = schema["dataset"]
@@ -58,7 +76,7 @@ class DashboardService:
 
         return Dashboard(
             workspace_id=workspace_id,
-            generated_at=datetime.now(timezone.utc),
+            generated_at=state.get("generated_at", datetime.now(timezone.utc)),
             metadata=[
                 DatasetMetadata(
                     name=dataset["name"],

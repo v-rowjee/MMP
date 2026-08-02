@@ -89,6 +89,19 @@ def test_rejects_duplicate_normalised_columns():
         upload(Database(), b"Order ID,order-id\n1,2\n")
 
 
+def test_cleans_text_columns_without_removing_rows():
+    db = Database()
+
+    upload(db, b" Customer Name ,Note\n  Alice  ,   \n")
+
+    dataset = db.rows["datasets"][0]
+    parquet = pd.read_parquet(BytesIO(db.bucket.files[dataset["meta"]["parquet_path"]]))
+    assert list(parquet.columns) == ["customer_name", "note"]
+    assert parquet.iloc[0]["customer_name"] == "Alice"
+    assert pd.isna(parquet.iloc[0]["note"])
+    assert dataset["meta"]["profile"]["missing_values"] == 1
+
+
 def test_cleans_up_after_database_failure():
     db = Database(fail="dataset_fields")
 

@@ -1,10 +1,11 @@
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-import re
 
-import pandas as pd
+import polars as pl
 from fastapi import UploadFile
+
+from app.services.ingestion.cleaning import IngestionCleaner
 
 
 @dataclass
@@ -18,6 +19,7 @@ class ProcessedFile:
 
 
 def process_file(file: UploadFile, max_size: int) -> ProcessedFile:
+    cleaner = IngestionCleaner()
     filename = file.filename or ""
     if Path(filename).suffix.lower() != ".csv":
         raise ValueError("Only CSV files are supported")
@@ -25,41 +27,40 @@ def process_file(file: UploadFile, max_size: int) -> ProcessedFile:
     if not original or len(original) > max_size:
         raise ValueError("File is empty or too large")
     try:
-        frame = pd.read_csv(BytesIO(original))
-    except (UnicodeDecodeError, pd.errors.ParserError, ValueError) as error:
+        frame = pl.read_csv(BytesIO(original))
+    except (pl.exceptions.PolarsError, UnicodeDecodeError, ValueError) as error:
         raise ValueError("CSV cannot be read") from error
-    if frame.empty or frame.columns.empty:
+    if frame.is_empty() or not frame.columns:
         raise ValueError("CSV must contain rows and columns")
     original_names = [str(name) for name in frame.columns]
-    names = [normalise_name(name) for name in original_names]
-    if len(names) != len(set(names)):
-        raise ValueError("Duplicate column names after normalisation")
-    frame.columns = names
+    frame = cleaner.clean_df(frame)
     fields = [
         {
             "name": name,
             "original_name": original_name,
             "position": position,
-            "dtype": str(frame[name].dtype),
-            "role": "measure" if pd.api.types.is_numeric_dtype(frame[name]) else "dimension",
-            "profile": {"null_count": int(frame[name].isna().sum()), "unique_count": int(frame[name].nunique())},
+            "dtype": str(frame.schema[name]),
+            "role": "measure" if frame.schema[name].is_numeric() else "dimension",
+            "profile": {
+                "null_count": frame.get_column(name).null_count(),
+                "unique_count": frame.get_column(name).n_unique(),
+            },
         }
-        for position, (name, original_name) in enumerate(zip(names, original_names, strict=True))
+        for position, (name, original_name) in enumerate(
+            zip(frame.columns, original_names, strict=True)
+        )
     ]
+    parquet = BytesIO()
+    frame.write_parquet(parquet)
     return ProcessedFile(
         filename=filename,
-        name=normalise_name(Path(filename).stem),
+        name=cleaner.normalise_name(Path(filename).stem),
         original=original,
-        parquet=frame.to_parquet(index=False),
+        parquet=parquet.getvalue(),
         fields=fields,
         profile={
-            "row_count": len(frame),
-            "column_count": len(frame.columns),
-            "missing_values": int(frame.isna().sum().sum()),
+            "row_count": frame.height,
+            "column_count": frame.width,
+            "missing_values": sum(field["profile"]["null_count"] for field in fields),
         },
     )
-
-
-def normalise_name(value: str) -> str:
-    name = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_") or "column"
-    return ("column_" + name if name[0].isdigit() else name)[:63]

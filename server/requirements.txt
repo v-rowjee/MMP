@@ -1,6 +1,7 @@
 fastapi==0.129.0
 langgraph==1.2.8
 pandas==2.3.3
+polars==1.43.2
 pydantic==2.12.5
 pydantic-settings==2.14.2
 pyarrow==23.0.1

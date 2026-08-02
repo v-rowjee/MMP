@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 
 from app.deps import workspace
 from app.schemas.upload import UploadResponse
-from app.services.ingestion.pipeline import upload_files
+from app.services.ingestion.service import IngestionService
 
 router = APIRouter(prefix="/upload", tags=["upload"])
 
@@ -14,12 +14,10 @@ def upload(
     workspace_id: str = Depends(workspace),
 ) -> UploadResponse:
     try:
-        return upload_files(
+        return IngestionService(
             request.app.state.db,
-            workspace_id,
-            files,
-            bucket=request.app.state.settings.upload_bucket,
-            max_file_bytes=request.app.state.settings.upload_max_file_bytes,
-        )
+            request.app.state.settings.upload_bucket,
+            request.app.state.settings.upload_max_file_bytes,
+        ).upload_files(workspace_id, files)
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error

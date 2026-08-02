@@ -7,7 +7,7 @@ from fastapi import FastAPI, UploadFile
 from fastapi.testclient import TestClient
 
 from app.api.upload import router
-from app.services.ingestion.pipeline import upload_files
+from app.services.ingestion.service import IngestionService
 
 
 class Query:
@@ -62,7 +62,7 @@ def file(data, name="sales.csv"):
 
 
 def upload(db, data=b"Order ID,Amount\n1,10\n2,20\n"):
-    return upload_files(db, "ws_12345678", [file(data)], bucket="upload", max_file_bytes=1_000_000)
+    return IngestionService(db, "upload", 1_000_000).upload_files("ws_12345678", [file(data)])
 
 
 def test_upload_creates_profile_metadata_analysis_and_parquet():
@@ -81,7 +81,7 @@ def test_upload_creates_profile_metadata_analysis_and_parquet():
 @pytest.mark.parametrize("data,name", [(b"", "empty.csv"), (b"a\n1\n", "data.txt")])
 def test_rejects_invalid_files(data, name):
     with pytest.raises(ValueError):
-        upload_files(Database(), "ws_12345678", [file(data, name)], bucket="upload", max_file_bytes=1_000_000)
+        IngestionService(Database(), "upload", 1_000_000).upload_files("ws_12345678", [file(data, name)])
 
 
 def test_rejects_duplicate_normalised_columns():

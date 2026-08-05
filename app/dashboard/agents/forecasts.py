@@ -5,7 +5,9 @@ from typing import Any
 
 from app.schemas.dashboard import ForecastAnalysis
 
-PROMPT = Path(__file__).with_suffix(".toon").read_text(encoding="utf-8").strip()
+PROMPT = (Path(__file__).parent / "prompts" / "forecasts.toon").read_text(
+    encoding="utf-8"
+).strip()
 
 
 def generate_forecasts(

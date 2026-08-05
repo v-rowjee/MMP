@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from pathlib import Path
 
 import pytest
 
@@ -8,6 +9,20 @@ from app.dashboard.nodes import analysis as analysis_nodes
 from app.dashboard.nodes.context import load_dataset_context
 from app.dashboard.repository import DashboardRepository
 from app.dashboard.validation import DashboardValidationService
+
+
+def test_dashboard_agent_prompts_are_grouped_in_the_prompts_directory():
+    prompts_directory = Path(dashboard_agents.__file__).parent / "prompts"
+
+    assert {path.name for path in prompts_directory.glob("*.toon")} == {
+        "anomalies.toon",
+        "forecasts.toon",
+        "insights.toon",
+        "kpis_and_trends.toon",
+        "layout.toon",
+        "planner.toon",
+    }
+    assert not list(Path(dashboard_agents.__file__).parent.glob("*.toon"))
 
 
 class Query:

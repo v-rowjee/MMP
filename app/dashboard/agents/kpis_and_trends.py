@@ -5,7 +5,9 @@ from typing import Any
 
 from app.schemas.dashboard import KPIAndTrendAnalysis
 
-PROMPT = Path(__file__).with_suffix(".toon").read_text(encoding="utf-8").strip()
+PROMPT = (Path(__file__).parent / "prompts" / "kpis_and_trends.toon").read_text(
+    encoding="utf-8"
+).strip()
 
 
 def calculate_kpis_and_trends(

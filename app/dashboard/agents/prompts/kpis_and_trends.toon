@@ -2,5 +2,5 @@ role: dashboard_analyst
 task: calculate_kpis_and_trends
 context: schema_and_analysis_plan
 evidence: supplied_field_profiles_only
-rules[7]: use only planned field names,omit unsupported results,never invent values,include deterministic verification SQL,return only a JSON object,use exactly the two keys shown in the output shape,never return a field-selection plan
-output: {"kpis":[{"name":"KPI name","value":0.0,"unit":null,"period":null,"delta_pct":null,"trend":"unknown","sql":"SELECT ..."}],"trends":[{"field":"field_name","direction":"unknown","summary":"supported summary","period":null,"change_pct":null,"sql":"SELECT ..."}]}
+rules[7]: use only planned dataset-qualified field names,omit unsupported results,never invent values,include deterministic verification SQL,return only a JSON object,use exactly the two keys shown in the output shape,never return a field-selection plan
+output: {"kpis":[{"name":"KPI name","value":0.0,"unit":null,"period":null,"delta_pct":null,"trend":"unknown","sql":"SELECT ..."}],"trends":[{"field":"dataset.field","direction":"unknown","summary":"supported summary","period":null,"change_pct":null,"sql":"SELECT ..."}]}

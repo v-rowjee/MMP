@@ -24,8 +24,10 @@ from app.dashboard.validation import DashboardValidationService
 
 
 class DashboardWorkflow:
-    def __init__(self, db: Any, llm: Any | None = None):
-        self.repository = DashboardRepository(db)
+    def __init__(
+        self, db: Any, llm: Any | None = None, upload_bucket: str = "upload"
+    ):
+        self.repository = DashboardRepository(db, upload_bucket)
         self.llm = llm
         self.validation = DashboardValidationService()
 
@@ -36,7 +38,9 @@ class DashboardWorkflow:
         graph.add_node(
             "calculate_kpis_and_trends", partial(calculate_kpis_and_trends, self.llm)
         )
-        graph.add_node("detect_anomalies", partial(detect_anomalies, self.llm))
+        graph.add_node(
+            "detect_anomalies", partial(detect_anomalies, self.repository, self.llm)
+        )
         graph.add_node("generate_forecasts", partial(generate_forecasts, self.llm))
         graph.add_node("synthesise_insights", partial(synthesise_insights, self.llm))
         graph.add_node("build_dashboard", partial(build_dashboard, self.llm))
@@ -62,5 +66,7 @@ class DashboardWorkflow:
         return graph.compile()
 
 
-def build_dashboard_graph(db: Any, llm: Any | None = None):
-    return DashboardWorkflow(db, llm).build()
+def build_dashboard_graph(
+    db: Any, llm: Any | None = None, upload_bucket: str = "upload"
+):
+    return DashboardWorkflow(db, llm, upload_bucket).build()

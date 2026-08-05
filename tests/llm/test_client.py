@@ -85,7 +85,7 @@ def test_returns_one_error_for_ollama_failures(monkeypatch):
     [
         (PLANNER_PROMPT, ("focus_areas", "kpi_fields", "trend_fields", "anomaly_fields", "forecast_fields")),
         (KPIS_PROMPT, ("kpis", "trends")),
-        (ANOMALIES_PROMPT, ("anomalies",)),
+        (ANOMALIES_PROMPT, ("descriptions",)),
         (FORECASTS_PROMPT, ("forecasts",)),
         (INSIGHTS_PROMPT, ("insights", "recommendations")),
         (LAYOUT_PROMPT, ("charts",)),

@@ -49,13 +49,15 @@ def dashboard() -> Dashboard:
 def test_generate_dashboard_uses_the_workspace_resolved_from_the_jwt(monkeypatch):
     app = FastAPI()
     app.state.db = SimpleNamespace()
+    app.state.settings = SimpleNamespace(upload_bucket="upload")
     app.include_router(router)
     app.dependency_overrides[workspace] = lambda: "ws_12345678"
     expected = dashboard()
 
     class DashboardService:
-        def __init__(self, db):
+        def __init__(self, db, upload_bucket):
             assert db is app.state.db
+            assert upload_bucket == "upload"
 
         def generate_dashboard(self, workspace_id):
             assert workspace_id == "ws_12345678"
@@ -82,13 +84,15 @@ def test_generate_dashboard_rejects_a_missing_bearer_token():
 def test_get_dashboard_uses_the_workspace_resolved_from_the_jwt(monkeypatch):
     app = FastAPI()
     app.state.db = SimpleNamespace()
+    app.state.settings = SimpleNamespace(upload_bucket="upload")
     app.include_router(router)
     app.dependency_overrides[workspace] = lambda: "ws_12345678"
     expected = dashboard()
 
     class DashboardService:
-        def __init__(self, db):
+        def __init__(self, db, upload_bucket):
             assert db is app.state.db
+            assert upload_bucket == "upload"
 
         def get_dashboard(self, workspace_id):
             assert workspace_id == "ws_12345678"
@@ -148,16 +152,28 @@ def test_dashboard_service_returns_dashboard_schema(monkeypatch):
     uploaded_at = datetime.now(timezone.utc)
     state = {
         "schema": {
-            "dataset": {
-                "name": "sales",
-                "source_filename": "sales.csv",
-                "row_count": 2,
-                "profile": {"column_count": 2, "missing_values": 0},
-                "uploaded_at": uploaded_at,
-            },
-            "fields": [
-                {"name": "amount", "dtype": "Int64", "role": "measure"},
-                {"name": "customer", "dtype": "String", "role": "dimension"},
+            "datasets": [
+                {
+                    "name": "sales",
+                    "source_filename": "sales.csv",
+                    "row_count": 2,
+                    "profile": {"column_count": 2, "missing_values": 0},
+                    "uploaded_at": uploaded_at,
+                    "fields": [
+                        {"name": "amount", "dtype": "Int64", "role": "measure"},
+                        {"name": "customer", "dtype": "String", "role": "dimension"},
+                    ],
+                },
+                {
+                    "name": "inventory",
+                    "source_filename": "inventory.csv",
+                    "row_count": 3,
+                    "profile": {"column_count": 1, "missing_values": 1},
+                    "uploaded_at": uploaded_at,
+                    "fields": [
+                        {"name": "stock", "dtype": "Int64", "role": "measure"},
+                    ],
+                },
             ],
         },
         "kpis": [],
@@ -170,16 +186,19 @@ def test_dashboard_service_returns_dashboard_schema(monkeypatch):
     }
 
     class Repository:
-        def __init__(self, _):
+        def __init__(self, _, _upload_bucket="upload"):
             pass
 
         def create_analysis_for_workspace(self, workspace_id):
             assert workspace_id == "ws_12345678"
-            return {"id": "analysis_123", "dataset_id": "dataset_123"}
+            return {"id": "analysis_123", "dataset_ids": ["dataset_123", "dataset_456"]}
 
     class Graph:
         def invoke(self, input):
-            assert input == {"analysis_id": "analysis_123", "dataset_id": "dataset_123"}
+            assert input == {
+                "analysis_id": "analysis_123",
+                "dataset_ids": ["dataset_123", "dataset_456"],
+            }
             return state
 
     monkeypatch.setattr(dashboard_service, "DashboardRepository", Repository)
@@ -192,8 +211,10 @@ def test_dashboard_service_returns_dashboard_schema(monkeypatch):
     ).generate_dashboard("ws_12345678")
 
     assert response.workspace_id == "ws_12345678"
-    assert response.summary.numeric_columns == 1
+    assert response.summary.numeric_columns == 2
     assert response.summary.text_columns == 1
+    assert [metadata.name for metadata in response.metadata] == ["sales", "inventory"]
+    assert response.summary.missing_values == 1
     assert response.forecast.available is False
 
 
@@ -201,12 +222,12 @@ def test_dashboard_service_marks_the_analysis_failed_when_the_graph_raises(monke
     failure: dict[str, str] = {}
 
     class Repository:
-        def __init__(self, _):
+        def __init__(self, _, _upload_bucket="upload"):
             pass
 
         def create_analysis_for_workspace(self, workspace_id):
             assert workspace_id == "ws_12345678"
-            return {"id": "analysis_123", "dataset_id": "dataset_123"}
+            return {"id": "analysis_123", "dataset_ids": ["dataset_123", "dataset_456"]}
 
         def mark_analysis_failed(self, analysis_id, stage, diagnostic):
             failure.update(
@@ -259,33 +280,34 @@ def test_dashboard_service_returns_the_persisted_dashboard(monkeypatch):
         "warnings": [],
     }
     schema = {
-        "dataset": {
-            "name": "sales",
-            "source_filename": "sales.csv",
-            "row_count": 2,
-            "profile": {"column_count": 2, "missing_values": 0},
-            "uploaded_at": generated_at,
-        },
-        "fields": [
-            {"name": "amount", "dtype": "Int64", "role": "measure"},
-            {"name": "customer", "dtype": "String", "role": "dimension"},
-        ],
+        "datasets": [
+            {
+                "name": "sales",
+                "source_filename": "sales.csv",
+                "row_count": 2,
+                "profile": {"column_count": 2, "missing_values": 0},
+                "uploaded_at": generated_at,
+                "fields": [
+                    {"name": "amount", "dtype": "Int64", "role": "measure"},
+                    {"name": "customer", "dtype": "String", "role": "dimension"},
+                ],
+            }
+        ]
     }
 
     class Repository:
-        def __init__(self, _):
+        def __init__(self, _, _upload_bucket="upload"):
             pass
 
         def load_latest_dashboard(self, workspace_id):
             assert workspace_id == "ws_12345678"
             return {
                 "id": "analysis_123",
-                "dataset_id": "dataset_123",
                 "dashboard": stored_dashboard,
             }
 
-        def load_dataset_context(self, analysis_id, dataset_id):
-            assert (analysis_id, dataset_id) == ("analysis_123", "dataset_123")
+        def load_dataset_context(self, analysis_id):
+            assert analysis_id == "analysis_123"
             return schema
 
     monkeypatch.setattr(dashboard_service, "DashboardRepository", Repository)

@@ -20,6 +20,7 @@ END $$;
 
 
 
+drop table if exists public.analysis_run_datasets cascade;
 drop table if exists public.analysis_runs cascade;
 drop table if exists public.dataset_schemas cascade;
 drop table if exists public.dataset_files cascade;

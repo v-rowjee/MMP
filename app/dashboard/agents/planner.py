@@ -20,7 +20,11 @@ def plan_dashboard_analysis(
         schema,
         DashboardAnalysisPlan,
     ).model_dump()
-    fields = {field["name"] for field in schema.get("fields", [])}
+    fields = {
+        f"{dataset['name']}.{field['name']}"
+        for dataset in schema.get("datasets", [])
+        for field in dataset["fields"]
+    }
     selected_fields = (
         plan["kpi_fields"]
         + plan["trend_fields"]

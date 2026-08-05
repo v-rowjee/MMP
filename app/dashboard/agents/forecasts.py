@@ -29,7 +29,11 @@ def generate_forecasts(
             ],
             "errors": ["Forecast worker output was unavailable."],
         }
-    fields = {field["name"] for field in schema.get("fields", [])}
+    fields = {
+        f"{dataset['name']}.{field['name']}"
+        for dataset in schema.get("datasets", [])
+        for field in dataset["fields"]
+    }
     forecast_fields = set(analysis_plan.get("forecast_fields", []))
     if any(
         forecast["available"]

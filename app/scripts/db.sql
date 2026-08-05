@@ -31,7 +31,6 @@ create table public.dataset_fields (
 
 create table public.analysis_runs (
     id uuid primary key default gen_random_uuid(),
-    dataset_id uuid not null references public.datasets(id) on delete cascade,
     workspace_id uuid not null references public.workspaces(id) on delete cascade,
     status text not null check (status in ('dashboard_generating', 'dashboard_ready', 'failed')),
     dashboard jsonb not null default '{}'::jsonb,
@@ -40,16 +39,24 @@ create table public.analysis_runs (
     created_at timestamptz not null default now()
 );
 
+create table public.analysis_run_datasets (
+    analysis_id uuid not null references public.analysis_runs(id) on delete cascade,
+    dataset_id uuid not null references public.datasets(id) on delete cascade,
+    primary key (analysis_id, dataset_id)
+);
+
 grant usage on schema public to authenticated;
 grant select, insert, update, delete on public.workspaces to authenticated;
 grant select, insert, update, delete on public.datasets to authenticated;
 grant select, insert, update, delete on public.dataset_fields to authenticated;
 grant select, insert, update, delete on public.analysis_runs to authenticated;
+grant select, insert, update, delete on public.analysis_run_datasets to authenticated;
 
 alter table public.workspaces enable row level security;
 alter table public.datasets enable row level security;
 alter table public.dataset_fields enable row level security;
 alter table public.analysis_runs enable row level security;
+alter table public.analysis_run_datasets enable row level security;
 
 create policy "Users manage their workspace" on public.workspaces
 for all to authenticated
@@ -111,6 +118,31 @@ with check (
         select 1
         from public.workspaces
         where workspaces.id = analysis_runs.workspace_id
+        and workspaces.user_id = (select auth.uid())
+    )
+);
+
+create policy "Users manage their analysis run datasets" on public.analysis_run_datasets
+for all to authenticated
+using (
+    exists (
+        select 1
+        from public.analysis_runs
+        join public.workspaces on workspaces.id = analysis_runs.workspace_id
+        join public.datasets on datasets.id = analysis_run_datasets.dataset_id
+        where analysis_runs.id = analysis_run_datasets.analysis_id
+        and datasets.workspace_id = analysis_runs.workspace_id
+        and workspaces.user_id = (select auth.uid())
+    )
+)
+with check (
+    exists (
+        select 1
+        from public.analysis_runs
+        join public.workspaces on workspaces.id = analysis_runs.workspace_id
+        join public.datasets on datasets.id = analysis_run_datasets.dataset_id
+        where analysis_runs.id = analysis_run_datasets.analysis_id
+        and datasets.workspace_id = analysis_runs.workspace_id
         and workspaces.user_id = (select auth.uid())
     )
 );

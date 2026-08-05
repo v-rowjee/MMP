@@ -6,7 +6,7 @@ from typing import Annotated, Any, Required, TypedDict
 
 class DashboardState(TypedDict, total=False):
     analysis_id: Required[str]
-    dataset_id: Required[str]
+    dataset_ids: Required[list[str]]
     schema: dict[str, Any]
     analysis_plan: dict[str, Any]
     kpis: list[dict[str, Any]]

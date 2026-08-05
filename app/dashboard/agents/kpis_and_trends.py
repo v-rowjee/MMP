@@ -28,7 +28,11 @@ def calculate_kpis_and_trends(
             "trends": [],
             "errors": ["KPI worker output was unavailable."],
         }
-    fields = {field["name"] for field in schema.get("fields", [])}
+    fields = {
+        f"{dataset['name']}.{field['name']}"
+        for dataset in schema.get("datasets", [])
+        for field in dataset["fields"]
+    }
     trend_fields = set(analysis_plan.get("trend_fields", []))
     if any(
         trend["field"] not in fields or trend["field"] not in trend_fields

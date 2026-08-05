@@ -19,20 +19,22 @@ class DashboardService:
         self,
         db: Any,
         llm: Any | None = None,
+        upload_bucket: str = "upload",
     ):
         self.db = db
         self.llm = llm or OllamaClient()
-        self.repository = DashboardRepository(db)
+        self.upload_bucket = upload_bucket
+        self.repository = DashboardRepository(db, upload_bucket)
 
     def generate_dashboard(self, workspace_id: str) -> Dashboard:
         from app.dashboard.graph import build_dashboard_graph
 
         analysis = self.repository.create_analysis_for_workspace(workspace_id)
         try:
-            state = build_dashboard_graph(self.db, self.llm).invoke(
+            state = build_dashboard_graph(self.db, self.llm, self.upload_bucket).invoke(
                 {
                     "analysis_id": analysis["id"],
-                    "dataset_id": analysis["dataset_id"],
+                    "dataset_ids": analysis["dataset_ids"],
                 }
             )
         except Exception as error:
@@ -47,7 +49,7 @@ class DashboardService:
         stored_dashboard = analysis["dashboard"]
         state = {
             "schema": self.repository.load_dataset_context(
-                analysis["id"], analysis["dataset_id"]
+                analysis["id"]
             ),
             "generated_at": stored_dashboard["generated_at"],
             "kpis": stored_dashboard["kpis"],
@@ -62,9 +64,8 @@ class DashboardService:
 
     def _build_response(self, workspace_id: str, state: dict[str, Any]) -> Dashboard:
         schema = state["schema"]
-        dataset = schema["dataset"]
-        fields = schema["fields"]
-        profile = dataset["profile"]
+        datasets = schema["datasets"]
+        fields = [field for dataset in datasets for field in dataset["fields"]]
         date_columns = sum("date" in field["dtype"].lower() for field in fields)
         numeric_columns = sum(field["role"] == "measure" for field in fields)
         text_columns = sum(
@@ -82,16 +83,20 @@ class DashboardService:
                     name=dataset["name"],
                     source_filename=dataset["source_filename"],
                     row_count=dataset["row_count"],
-                    column_count=profile["column_count"],
+                    column_count=dataset["profile"]["column_count"],
                     uploaded_at=dataset["uploaded_at"],
                 )
+                for dataset in datasets
             ],
             summary=DataSummary(
                 numeric_columns=numeric_columns,
                 categorical_columns=0,
                 text_columns=text_columns,
                 date_columns=date_columns,
-                missing_values=profile.get("missing_values", 0),
+                missing_values=sum(
+                    dataset["profile"].get("missing_values", 0)
+                    for dataset in datasets
+                ),
             ),
             kpis=state.get("kpis", []),
             charts=state["dashboard"].get("charts", []),

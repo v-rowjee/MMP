@@ -49,5 +49,5 @@ def persist_dashboard(
         "recommendations": state.get("recommendations", []),
         "warnings": state.get("errors", []),
     }
-    repository.persist_dashboard(state["analysis_id"], state["dataset_id"], dashboard)
+    repository.persist_dashboard(state["analysis_id"], dashboard)
     return {"dashboard": dashboard, "generated_at": generated_at}

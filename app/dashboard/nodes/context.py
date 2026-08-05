@@ -11,6 +11,6 @@ def load_dataset_context(
 ) -> dict[str, Any]:
     return {
         "schema": repository.load_dataset_context(
-            state["analysis_id"], state["dataset_id"]
+            state["analysis_id"], state["dataset_ids"]
         )
     }

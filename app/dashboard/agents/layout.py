@@ -34,12 +34,18 @@ def build_dashboard(
         },
         DashboardLayout,
     ).model_dump()
-    fields = {field["name"] for field in schema.get("fields", [])}
-    dataset_name = schema.get("dataset", {}).get("name")
+    fields_by_dataset = {
+        dataset["name"]: {field["name"] for field in dataset["fields"]}
+        for dataset in schema.get("datasets", [])
+    }
     if any(
-        dataset_name and chart["dataset"] != dataset_name
-        or chart["x_axis"] is not None and chart["x_axis"] not in fields
-        or any(series["column"] not in fields for series in chart["series"])
+        chart["dataset"] not in fields_by_dataset
+        or chart["x_axis"] is not None
+        and chart["x_axis"] not in fields_by_dataset[chart["dataset"]]
+        or any(
+            series["column"] not in fields_by_dataset[chart["dataset"]]
+            for series in chart["series"]
+        )
         for chart in dashboard["charts"]
     ):
         raise ValueError("Dashboard layout contains unknown fields")

@@ -16,7 +16,9 @@ async def generate_dashboard(
     workspace_id: str = Depends(workspace),
 ) -> Dashboard:
     try:
-        return DashboardService(request.app.state.db).generate_dashboard(
+        return DashboardService(
+            request.app.state.db, upload_bucket=request.app.state.settings.upload_bucket
+        ).generate_dashboard(
             workspace_id
         )
     except ValueError as error:
@@ -29,6 +31,8 @@ async def get_dashboard(
     workspace_id: str = Depends(workspace),
 ) -> Dashboard:
     try:
-        return DashboardService(request.app.state.db).get_dashboard(workspace_id)
+        return DashboardService(
+            request.app.state.db, upload_bucket=request.app.state.settings.upload_bucket
+        ).get_dashboard(workspace_id)
     except ValueError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
